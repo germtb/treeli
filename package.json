@@ -1,0 +1,62 @@
+{
+  "name": "treeli",
+  "version": "0.1.0",
+  "description": "A declarative TUI framework using JSX and efficient cell-based diffing",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./jsx-runtime": {
+      "types": "./dist/jsx/jsx-runtime.d.ts",
+      "import": "./dist/jsx/jsx-runtime.js"
+    },
+    "./jsx-dev-runtime": {
+      "types": "./dist/jsx/jsx-runtime.d.ts",
+      "import": "./dist/jsx/jsx-runtime.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun run build.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "tui",
+    "terminal",
+    "jsx",
+    "cli",
+    "reactive",
+    "solid",
+    "ui",
+    "console",
+    "ansi",
+    "flexbox",
+    "signals"
+  ],
+  "author": "germtb",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/germtb/treeli.git"
+  },
+  "homepage": "https://github.com/germtb/treeli#readme",
+  "bugs": {
+    "url": "https://github.com/germtb/treeli/issues"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
