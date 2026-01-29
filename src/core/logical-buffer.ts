@@ -55,6 +55,31 @@ export class LogicalBuffer {
   }
 
   /**
+   * Set a cell at logical position (x, y), merging style with existing cell.
+   * Preserves background color if the new style doesn't specify one.
+   */
+  setMerge(x: number, y: number, cell: Cell): void {
+    if (y < 0 || y >= this.height || x < 0) return;
+    const row = this.rows[y]!;
+
+    // Extend row with empty cells if needed
+    while (row.cells.length <= x) {
+      row.cells.push(EMPTY_CELL);
+    }
+
+    const existing = row.cells[x] ?? EMPTY_CELL;
+    const mergedStyle: Style = {
+      ...existing.style,
+      ...cell.style,
+    };
+    // Preserve background if new style doesn't specify one
+    if (cell.style.background === undefined && existing.style.background !== undefined) {
+      mergedStyle.background = existing.style.background;
+    }
+    row.cells[x] = { char: cell.char, style: mergedStyle };
+  }
+
+  /**
    * Get the length of a logical row.
    */
   rowLength(y: number): number {

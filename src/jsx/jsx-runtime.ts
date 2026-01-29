@@ -11,7 +11,7 @@ import {
   type Props,
 } from "../core/vnode.ts";
 import type { Style } from "../core/cell.ts";
-import type { LayoutProps } from "../core/props.ts";
+import type { LayoutProps, InputElementProps } from "../core/props.ts";
 
 export type { VNode };
 
@@ -63,6 +63,7 @@ export namespace JSX {
   export interface IntrinsicElements {
     box: BoxProps;
     text: TextProps;
+    input: InputElementProps;
     fragment: { children?: unknown };
   }
 

@@ -18,6 +18,7 @@ const [message, setMessage] = createSignal("");
 
 // Create inputs - they auto-register with the focus manager
 const usernameInput = createInput({
+  placeholder: "Enter your username",
   onKeypress: (key, state) => {
     if (key === KEYS.ENTER) {
       focus.next(); // Move to next field
@@ -30,6 +31,7 @@ const usernameInput = createInput({
 
 const passwordInput = createInput({
   mask: "*",
+  placeholder: "Enter your password",
   onKeypress: (key, state) => {
     if (key === KEYS.ENTER) {
       focus.next(); // Move to button
@@ -65,33 +67,21 @@ function handleLogin() {
   }, 500);
 }
 
-// Render a text input field - full text shown, framework handles wrapping
+// Render an input field with label - much simpler now with intrinsic <input> element
 function InputField(props: {
   label: string;
   input: ReturnType<typeof createInput>;
 }) {
   const { label, input } = props;
   const isFocused = input.focused();
-  const display = input.displayValue();
-  const cursor = input.cursorPos();
 
   const labelColor = isFocused ? "cyan" : { rgb: [128, 128, 128] as [number, number, number] };
   const textColor = isFocused ? "white" : { rgb: [128, 128, 128] as [number, number, number] };
 
-  // Split around cursor - show full text, let framework handle wrapping
-  const beforeCursor = display.slice(0, cursor);
-  const cursorChar = display[cursor] || " ";
-  const afterCursor = display.slice(cursor + 1);
-
   return (
     <box direction="column">
       <text style={{ color: labelColor }}>{label}:</text>
-      <box direction="row">
-        <text style={{ color: textColor }}>{beforeCursor}</text>
-        {isFocused && <text style={{ inverse: true }}>{cursorChar}</text>}
-        {!isFocused && <text style={{ color: textColor }}>{cursorChar}</text>}
-        <text style={{ color: textColor }}>{afterCursor}</text>
-      </box>
+      <input input={input} style={{ color: textColor }} />
     </box>
   );
 }

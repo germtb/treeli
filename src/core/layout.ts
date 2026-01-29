@@ -22,7 +22,20 @@ import {
   type Justify,
   type Align,
   type BorderStyle,
+  type Overflow,
 } from "./props.ts";
+import type { Input } from "./input.ts";
+
+/**
+ * Clip region for overflow handling.
+ * Content outside this region will be clipped.
+ */
+export interface ClipRegion {
+  minX: number;
+  minY: number;
+  maxX: number; // exclusive
+  maxY: number; // exclusive
+}
 
 export interface LayoutBox {
   // Position (absolute, after all calculations)
@@ -104,13 +117,35 @@ function measureNode(node: VNode): { width: number; height: number } {
   // Text nodes: width = text length, height = 1
   if (isTextNode(node)) {
     const text = getTextContent(node);
-    return { width: text.length, height: 1 };
+    const lines = text.split("\n");
+    const maxLineWidth = Math.max(...lines.map(l => l.length), 0);
+    return { width: maxLineWidth, height: lines.length };
   }
 
   // <text> element: collect all child text
   if (node.type === "text") {
     const text = collectTextContent(node);
-    return { width: text.length, height: 1 };
+    const lines = text.split("\n");
+    const maxLineWidth = Math.max(...lines.map(l => l.length), 0);
+    return { width: maxLineWidth, height: lines.length };
+  }
+
+  // <input> element: size based on content (with room for cursor)
+  if (node.type === "input") {
+    const input = node.props.input as Input;
+    const explicitWidth = node.props.width as number | undefined;
+    const explicitHeight = node.props.height as number | undefined;
+    const displayValue = input.displayValue();
+
+    // Measure content
+    const lines = displayValue.split("\n");
+    const maxLineWidth = Math.max(...lines.map(l => l.length), 0);
+
+    // Add 1 to width to always have room for cursor at end of line
+    const width = explicitWidth ?? (maxLineWidth + 1);
+    const height = explicitHeight ?? lines.length;
+
+    return { width, height };
   }
 
   // For boxes, we need to measure children
@@ -172,16 +207,20 @@ function layoutNode(node: VNode, ctx: LayoutContext): LayoutResult {
 
   // Handle text nodes
   if (isTextNode(node)) {
+    const text = getTextContent(node);
+    const lines = text.split("\n");
+    const maxLineWidth = Math.max(...lines.map(l => l.length), 0);
+
     return {
       box: {
         x: ctx.x,
         y: ctx.y,
-        width: Math.min(getTextContent(node).length, ctx.width),
-        height: 1,
+        width: Math.min(maxLineWidth, ctx.width),
+        height: lines.length,
         innerX: ctx.x,
         innerY: ctx.y,
-        innerWidth: Math.min(getTextContent(node).length, ctx.width),
-        innerHeight: 1,
+        innerWidth: Math.min(maxLineWidth, ctx.width),
+        innerHeight: lines.length,
         node,
         children: [],
         zIndex: (node.props.zIndex as number) ?? 0,
@@ -190,15 +229,20 @@ function layoutNode(node: VNode, ctx: LayoutContext): LayoutResult {
     };
   }
 
-  // Handle <text> element - just output text, let terminal handle wrapping
+  // Handle <text> element - splits on newlines (with optional wrap)
   if (node.type === "text") {
     const text = collectTextContent(node);
+    const shouldWrap = node.props.wrap === true;
 
-    // Create synthetic node with the text stored in props
+    // If wrapping is enabled, wrap to context width
+    const lines = shouldWrap ? wrapText(text, ctx.width) : text.split("\n");
+    const maxLineWidth = Math.max(...lines.map(l => l.length), 0);
+
+    // Create synthetic node with the wrapped text stored in props
     const syntheticNode: VNode = {
       type: TEXT_NODE_TYPE,
       props: {
-        text,
+        text: lines.join("\n"), // Store wrapped text
         style: node.props.style,
       },
       children: [],
@@ -209,13 +253,46 @@ function layoutNode(node: VNode, ctx: LayoutContext): LayoutResult {
       box: {
         x: ctx.x,
         y: ctx.y,
-        width: text.length,
-        height: 1,
+        width: Math.min(maxLineWidth, ctx.width),
+        height: lines.length,
         innerX: ctx.x,
         innerY: ctx.y,
-        innerWidth: text.length,
-        innerHeight: 1,
+        innerWidth: Math.min(maxLineWidth, ctx.width),
+        innerHeight: lines.length,
         node: syntheticNode,
+        children: [],
+        zIndex: (node.props.zIndex as number) ?? 0,
+      },
+      absoluteBoxes: [],
+    };
+  }
+
+  // Handle <input> element - sizes based on content (with room for cursor)
+  if (node.type === "input") {
+    const input = node.props.input as Input;
+    const explicitWidth = node.props.width as number | undefined;
+    const explicitHeight = node.props.height as number | undefined;
+    const displayValue = input.displayValue();
+
+    // Measure content
+    const lines = displayValue.split("\n");
+    const maxLineWidth = Math.max(...lines.map(l => l.length), 0);
+
+    // Add 1 to width to always have room for cursor at end of line
+    const width = explicitWidth ?? (maxLineWidth + 1);
+    const height = explicitHeight ?? lines.length;
+
+    return {
+      box: {
+        x: ctx.x,
+        y: ctx.y,
+        width,
+        height,
+        innerX: ctx.x,
+        innerY: ctx.y,
+        innerWidth: width,
+        innerHeight: height,
+        node,
         children: [],
         zIndex: (node.props.zIndex as number) ?? 0,
       },
@@ -410,17 +487,18 @@ function layoutFlexChildren(
 
     // Calculate cross-axis position based on align
     let crossPos = 0;
-    let actualCrossSize = childCrossSize;
+    // Always constrain child size to available space
+    let actualCrossSize = Math.min(childCrossSize, availableCross);
 
     switch (align) {
       case "start":
         crossPos = 0;
         break;
       case "center":
-        crossPos = Math.max(0, (availableCross - childCrossSize) / 2);
+        crossPos = Math.max(0, (availableCross - actualCrossSize) / 2);
         break;
       case "end":
-        crossPos = Math.max(0, availableCross - childCrossSize);
+        crossPos = Math.max(0, availableCross - actualCrossSize);
         break;
       case "stretch":
         crossPos = 0;
@@ -465,24 +543,163 @@ function collectTextContent(node: VNode): string {
 }
 
 /**
+ * Wrap text to fit within a given width.
+ * Breaks on word boundaries when possible, otherwise hard-wraps.
+ */
+function wrapText(text: string, maxWidth: number): string[] {
+  if (maxWidth <= 0) return [text];
+
+  const inputLines = text.split("\n");
+  const outputLines: string[] = [];
+
+  for (const line of inputLines) {
+    if (line.length <= maxWidth) {
+      outputLines.push(line);
+      continue;
+    }
+
+    // Need to wrap this line
+    let remaining = line;
+    while (remaining.length > maxWidth) {
+      // Try to find a word boundary (space) to break at
+      let breakPoint = remaining.lastIndexOf(" ", maxWidth);
+
+      // If no space found or it's too early in the line, hard wrap
+      if (breakPoint <= 0 || breakPoint < maxWidth / 2) {
+        breakPoint = maxWidth;
+      }
+
+      outputLines.push(remaining.slice(0, breakPoint));
+      remaining = remaining.slice(breakPoint).trimStart(); // Remove leading space from next line
+    }
+
+    if (remaining.length > 0) {
+      outputLines.push(remaining);
+    }
+  }
+
+  return outputLines;
+}
+
+/**
+ * Check if a position is within the clip region.
+ */
+function isInClip(x: number, y: number, clip: ClipRegion | null): boolean {
+  if (!clip) return true;
+  return x >= clip.minX && x < clip.maxX && y >= clip.minY && y < clip.maxY;
+}
+
+/**
+ * Intersect two clip regions, returning the overlapping area.
+ */
+function intersectClip(a: ClipRegion | null, b: ClipRegion): ClipRegion {
+  if (!a) return b;
+  return {
+    minX: Math.max(a.minX, b.minX),
+    minY: Math.max(a.minY, b.minY),
+    maxX: Math.min(a.maxX, b.maxX),
+    maxY: Math.min(a.maxY, b.maxY),
+  };
+}
+
+/**
  * Render a LayoutBox tree to a CellBuffer.
  */
-export function renderToBuffer(box: LayoutBox, buffer: CellBuffer): void {
+export function renderToBuffer(box: LayoutBox, buffer: CellBuffer, clip: ClipRegion | null = null): void {
   const { node, x, y, width, height } = box;
 
-  // Handle text nodes - use merge to preserve parent's background
+  // Handle text nodes - split on newlines
   if (isTextNode(node)) {
     const style = (node.props.style as Style) ?? {};
     const text = getTextContent(node);
-    // Just write the text - let terminal handle wrapping
-    buffer.writeStringMerge(x, y, text, style);
+    const lines = text.split("\n");
+
+    // Render each line on a separate row
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const lineY = y + lineIdx;
+      // Skip if entire line is outside clip region
+      if (clip && (lineY < clip.minY || lineY >= clip.maxY)) continue;
+
+      const line = lines[lineIdx]!;
+      // Write each character, respecting clip
+      for (let i = 0; i < line.length; i++) {
+        const charX = x + i;
+        if (isInClip(charX, lineY, clip)) {
+          buffer.setCharMerge(charX, lineY, line[i]!, style);
+        }
+      }
+    }
     return;
   }
 
   // Skip fragments, just render children
   if (node.type === "fragment") {
     for (const childBox of box.children) {
-      renderToBuffer(childBox, buffer);
+      renderToBuffer(childBox, buffer, clip);
+    }
+    return;
+  }
+
+  // Handle <input> elements with cursor and placeholder styling
+  if (node.type === "input") {
+    const input = node.props.input as Input;
+    const baseStyle = (node.props.style as Style) ?? { color: "white" };
+    const cursorStyle = (node.props.cursorStyle as Style) ?? { background: "white", color: "black" };
+    const placeholderStyle = (node.props.placeholderStyle as Style) ?? { dim: true };
+
+    const displayValue = input.displayValue();
+    const cursorPos = input.cursorPos();
+    const isFocused = input.focused();
+    const isPlaceholder = input.showingPlaceholder();
+
+    const textStyle: Style = isPlaceholder
+      ? { ...baseStyle, ...placeholderStyle }
+      : baseStyle;
+
+    // Split into lines - each line is a row
+    const lines = displayValue.split("\n");
+
+    // Render all rows from 0 to height (always fill the bounding box)
+    let charPos = 0;
+    for (let lineIdx = 0; lineIdx < height; lineIdx++) {
+      const lineY = y + lineIdx;
+      // Skip if entire line is outside clip region
+      if (clip && (lineY < clip.minY || lineY >= clip.maxY)) {
+        if (lineIdx < lines.length) charPos += lines[lineIdx]!.length + 1;
+        continue;
+      }
+
+      if (lineIdx < lines.length) {
+        // Render actual line content
+        const line = lines[lineIdx]!;
+
+        // Is cursor on this line?
+        const cursorOnThisLine = isFocused && cursorPos >= charPos && cursorPos <= charPos + line.length;
+
+        for (let i = 0; i < width; i++) {
+          const charX = x + i;
+          if (!isInClip(charX, lineY, clip)) continue;
+
+          if (cursorOnThisLine && i === cursorPos - charPos) {
+            const cursorChar = line[i] || " ";
+            buffer.set(charX, lineY, createCell(cursorChar, cursorStyle));
+          } else if (i < line.length) {
+            buffer.setCharMerge(charX, lineY, line[i]!, textStyle);
+          } else {
+            buffer.setCharMerge(charX, lineY, " ", textStyle);
+          }
+        }
+
+        charPos += line.length + 1; // +1 for the newline character
+      } else {
+        // Empty row (beyond actual content) - fill with spaces
+        for (let i = 0; i < width; i++) {
+          const charX = x + i;
+          if (isInClip(charX, lineY, clip)) {
+            buffer.setCharMerge(charX, lineY, " ", {});
+          }
+        }
+      }
     }
     return;
   }
@@ -491,12 +708,17 @@ export function renderToBuffer(box: LayoutBox, buffer: CellBuffer): void {
   if (node.type === "box") {
     const style = (node.props.style as Style) ?? {};
     const borderStyle = getBorderStyle(node.props.border as any);
+    const overflow = (node.props.overflow as Overflow) ?? "visible";
 
     // Fill background if bg color is set
     if (style.background) {
       for (let dy = 0; dy < height; dy++) {
         for (let dx = 0; dx < width; dx++) {
-          buffer.set(x + dx, y + dy, createCell(" ", { background: style.background }));
+          const cellX = x + dx;
+          const cellY = y + dy;
+          if (isInClip(cellX, cellY, clip)) {
+            buffer.set(cellX, cellY, createCell(" ", { background: style.background }));
+          }
         }
       }
     }
@@ -507,30 +729,48 @@ export function renderToBuffer(box: LayoutBox, buffer: CellBuffer): void {
       const borderColor = style.color;
 
       // Top border
-      buffer.setCharMerge(x, y, chars.topLeft, { color: borderColor });
+      if (isInClip(x, y, clip)) buffer.setCharMerge(x, y, chars.topLeft, { color: borderColor });
       for (let dx = 1; dx < width - 1; dx++) {
-        buffer.setCharMerge(x + dx, y, chars.horizontal, { color: borderColor });
+        if (isInClip(x + dx, y, clip)) buffer.setCharMerge(x + dx, y, chars.horizontal, { color: borderColor });
       }
-      buffer.setCharMerge(x + width - 1, y, chars.topRight, { color: borderColor });
+      if (isInClip(x + width - 1, y, clip)) buffer.setCharMerge(x + width - 1, y, chars.topRight, { color: borderColor });
 
       // Side borders
       for (let dy = 1; dy < height - 1; dy++) {
-        buffer.setCharMerge(x, y + dy, chars.vertical, { color: borderColor });
-        buffer.setCharMerge(x + width - 1, y + dy, chars.vertical, { color: borderColor });
+        if (isInClip(x, y + dy, clip)) buffer.setCharMerge(x, y + dy, chars.vertical, { color: borderColor });
+        if (isInClip(x + width - 1, y + dy, clip)) buffer.setCharMerge(x + width - 1, y + dy, chars.vertical, { color: borderColor });
       }
 
       // Bottom border
-      buffer.setCharMerge(x, y + height - 1, chars.bottomLeft, { color: borderColor });
+      if (isInClip(x, y + height - 1, clip)) buffer.setCharMerge(x, y + height - 1, chars.bottomLeft, { color: borderColor });
       for (let dx = 1; dx < width - 1; dx++) {
-        buffer.setCharMerge(x + dx, y + height - 1, chars.horizontal, { color: borderColor });
+        if (isInClip(x + dx, y + height - 1, clip)) buffer.setCharMerge(x + dx, y + height - 1, chars.horizontal, { color: borderColor });
       }
-      buffer.setCharMerge(x + width - 1, y + height - 1, chars.bottomRight, { color: borderColor });
+      if (isInClip(x + width - 1, y + height - 1, clip)) buffer.setCharMerge(x + width - 1, y + height - 1, chars.bottomRight, { color: borderColor });
     }
+
+    // Calculate clip region for children if overflow is hidden
+    let childClip = clip;
+    if (overflow === "hidden" || overflow === "scroll") {
+      const newClip: ClipRegion = {
+        minX: box.innerX,
+        minY: box.innerY,
+        maxX: box.innerX + box.innerWidth,
+        maxY: box.innerY + box.innerHeight,
+      };
+      childClip = intersectClip(clip, newClip);
+    }
+
+    // Render children with potentially updated clip region
+    for (const childBox of box.children) {
+      renderToBuffer(childBox, buffer, childClip);
+    }
+    return;
   }
 
-  // Render children
+  // Render children (for other node types)
   for (const childBox of box.children) {
-    renderToBuffer(childBox, buffer);
+    renderToBuffer(childBox, buffer, clip);
   }
 }
 
@@ -538,22 +778,101 @@ export function renderToBuffer(box: LayoutBox, buffer: CellBuffer): void {
  * Render a LayoutBox tree to a LogicalBuffer.
  * Text is written at full length - wrapping happens at display time.
  */
-export function renderToLogicalBuffer(box: LayoutBox, buffer: LogicalBuffer): void {
+export function renderToLogicalBuffer(box: LayoutBox, buffer: LogicalBuffer, clip: ClipRegion | null = null): void {
   const { node, x, y, width, height } = box;
 
-  // Handle text nodes
+  // Handle text nodes - split on newlines
   if (isTextNode(node)) {
     const style = (node.props.style as Style) ?? {};
     const text = getTextContent(node);
-    // Write full text - no clipping, LogicalBuffer extends as needed
-    buffer.writeStringMerge(x, y, text, style);
+    const lines = text.split("\n");
+
+    // Render each line on a separate row
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const lineY = y + lineIdx;
+      // Skip if entire line is outside clip region
+      if (clip && (lineY < clip.minY || lineY >= clip.maxY)) continue;
+
+      const line = lines[lineIdx]!;
+      // Write each character, respecting clip - use setMerge to preserve background
+      for (let i = 0; i < line.length; i++) {
+        const charX = x + i;
+        if (isInClip(charX, lineY, clip)) {
+          buffer.setMerge(charX, lineY, { char: line[i]!, style });
+        }
+      }
+    }
     return;
   }
 
   // Skip fragments, just render children
   if (node.type === "fragment") {
     for (const childBox of box.children) {
-      renderToLogicalBuffer(childBox, buffer);
+      renderToLogicalBuffer(childBox, buffer, clip);
+    }
+    return;
+  }
+
+  // Handle <input> elements with cursor and placeholder styling
+  if (node.type === "input") {
+    const input = node.props.input as Input;
+    const baseStyle = (node.props.style as Style) ?? { color: "white" };
+    const cursorStyle = (node.props.cursorStyle as Style) ?? { background: "white", color: "black" };
+    const placeholderStyle = (node.props.placeholderStyle as Style) ?? { dim: true };
+
+    const displayValue = input.displayValue();
+    const cursorPos = input.cursorPos();
+    const isFocused = input.focused();
+    const isPlaceholder = input.showingPlaceholder();
+
+    const textStyle: Style = isPlaceholder
+      ? { ...baseStyle, ...placeholderStyle }
+      : baseStyle;
+
+    // Split into lines - each line is a row
+    const lines = displayValue.split("\n");
+
+    // Render all rows from 0 to height (always fill the bounding box)
+    let charPos = 0;
+    for (let lineIdx = 0; lineIdx < height; lineIdx++) {
+      const lineY = y + lineIdx;
+      // Skip if entire line is outside clip region
+      if (clip && (lineY < clip.minY || lineY >= clip.maxY)) {
+        if (lineIdx < lines.length) charPos += lines[lineIdx]!.length + 1;
+        continue;
+      }
+
+      if (lineIdx < lines.length) {
+        // Render actual line content
+        const line = lines[lineIdx]!;
+
+        // Is cursor on this line?
+        const cursorOnThisLine = isFocused && cursorPos >= charPos && cursorPos <= charPos + line.length;
+
+        for (let i = 0; i < width; i++) {
+          const charX = x + i;
+          if (!isInClip(charX, lineY, clip)) continue;
+
+          const char = i < line.length ? line[i]! : " ";
+          const style = cursorOnThisLine && i === cursorPos - charPos ? cursorStyle : textStyle;
+          // Cursor uses set (full style replacement), text uses setMerge (preserve background)
+          if (cursorOnThisLine && i === cursorPos - charPos) {
+            buffer.set(charX, lineY, { char, style });
+          } else {
+            buffer.setMerge(charX, lineY, { char, style });
+          }
+        }
+
+        charPos += line.length + 1; // +1 for the newline character
+      } else {
+        // Empty row (beyond actual content) - fill with spaces, preserve background
+        for (let i = 0; i < width; i++) {
+          const charX = x + i;
+          if (isInClip(charX, lineY, clip)) {
+            buffer.setMerge(charX, lineY, { char: " ", style: {} });
+          }
+        }
+      }
     }
     return;
   }
@@ -562,45 +881,68 @@ export function renderToLogicalBuffer(box: LayoutBox, buffer: LogicalBuffer): vo
   if (node.type === "box") {
     const style = (node.props.style as Style) ?? {};
     const borderStyle = getBorderStyle(node.props.border as any);
+    const overflow = (node.props.overflow as Overflow) ?? "visible";
 
     // Fill background if bg color is set
     if (style.background) {
       for (let dy = 0; dy < height; dy++) {
         for (let dx = 0; dx < width; dx++) {
-          buffer.set(x + dx, y + dy, { char: " ", style: { background: style.background } });
+          const cellX = x + dx;
+          const cellY = y + dy;
+          if (isInClip(cellX, cellY, clip)) {
+            buffer.set(cellX, cellY, { char: " ", style: { background: style.background } });
+          }
         }
       }
     }
 
-    // Draw border
+    // Draw border (use setMerge to preserve background)
     if (borderStyle !== "none") {
       const chars = BORDER_CHARS[borderStyle];
       const borderColor = style.color;
 
       // Top border
-      buffer.set(x, y, { char: chars.topLeft, style: { color: borderColor } });
+      if (isInClip(x, y, clip)) buffer.setMerge(x, y, { char: chars.topLeft, style: { color: borderColor } });
       for (let dx = 1; dx < width - 1; dx++) {
-        buffer.set(x + dx, y, { char: chars.horizontal, style: { color: borderColor } });
+        if (isInClip(x + dx, y, clip)) buffer.setMerge(x + dx, y, { char: chars.horizontal, style: { color: borderColor } });
       }
-      buffer.set(x + width - 1, y, { char: chars.topRight, style: { color: borderColor } });
+      if (isInClip(x + width - 1, y, clip)) buffer.setMerge(x + width - 1, y, { char: chars.topRight, style: { color: borderColor } });
 
       // Side borders
       for (let dy = 1; dy < height - 1; dy++) {
-        buffer.set(x, y + dy, { char: chars.vertical, style: { color: borderColor } });
-        buffer.set(x + width - 1, y + dy, { char: chars.vertical, style: { color: borderColor } });
+        if (isInClip(x, y + dy, clip)) buffer.setMerge(x, y + dy, { char: chars.vertical, style: { color: borderColor } });
+        if (isInClip(x + width - 1, y + dy, clip)) buffer.setMerge(x + width - 1, y + dy, { char: chars.vertical, style: { color: borderColor } });
       }
 
       // Bottom border
-      buffer.set(x, y + height - 1, { char: chars.bottomLeft, style: { color: borderColor } });
+      if (isInClip(x, y + height - 1, clip)) buffer.setMerge(x, y + height - 1, { char: chars.bottomLeft, style: { color: borderColor } });
       for (let dx = 1; dx < width - 1; dx++) {
-        buffer.set(x + dx, y + height - 1, { char: chars.horizontal, style: { color: borderColor } });
+        if (isInClip(x + dx, y + height - 1, clip)) buffer.setMerge(x + dx, y + height - 1, { char: chars.horizontal, style: { color: borderColor } });
       }
-      buffer.set(x + width - 1, y + height - 1, { char: chars.bottomRight, style: { color: borderColor } });
+      if (isInClip(x + width - 1, y + height - 1, clip)) buffer.setMerge(x + width - 1, y + height - 1, { char: chars.bottomRight, style: { color: borderColor } });
     }
+
+    // Calculate clip region for children if overflow is hidden
+    let childClip = clip;
+    if (overflow === "hidden" || overflow === "scroll") {
+      const newClip: ClipRegion = {
+        minX: box.innerX,
+        minY: box.innerY,
+        maxX: box.innerX + box.innerWidth,
+        maxY: box.innerY + box.innerHeight,
+      };
+      childClip = intersectClip(clip, newClip);
+    }
+
+    // Render children with potentially updated clip region
+    for (const childBox of box.children) {
+      renderToLogicalBuffer(childBox, buffer, childClip);
+    }
+    return;
   }
 
-  // Render children
+  // Render children (for other node types)
   for (const childBox of box.children) {
-    renderToLogicalBuffer(childBox, buffer);
+    renderToLogicalBuffer(childBox, buffer, clip);
   }
 }

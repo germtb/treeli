@@ -61,8 +61,15 @@ export class Renderer {
     // Render to logical buffer
     renderToLogicalBuffer(layout, this.nextLogical);
 
-    // Transform logical to visual rows
+    // Fill nextVisual with spaces - create unique cells for each position
+    // to ensure diff can detect when positions need clearing
     this.nextVisual.clear();
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        this.nextVisual.set(x, y, { char: " ", style: {} });
+      }
+    }
+
     const { visualRows, logicalToVisual } = this.nextLogical.toVisualRows(this.width);
 
     // Copy visual rows to visual buffer (up to terminal height)

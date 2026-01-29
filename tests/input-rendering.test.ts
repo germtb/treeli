@@ -1,5 +1,13 @@
 /**
- * Tests for input rendering with the actual buffer.
+ * Tests for MANUAL input rendering (legacy pattern).
+ *
+ * NOTE: The framework now provides an intrinsic <input> element that handles
+ * cursor rendering automatically. These tests demonstrate the manual pattern
+ * for users who need custom input rendering, but most apps should use:
+ *
+ *   <input input={myInput} />
+ *
+ * See tests/input-element.test.ts for tests of the modern approach.
  */
 
 import { describe, expect, it, beforeEach } from "bun:test";

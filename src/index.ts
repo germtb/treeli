@@ -11,11 +11,14 @@ export {
 } from "./core/vnode.ts";
 export {
   type LayoutProps,
+  type InputElementProps,
+  type TextElementProps,
   type Direction,
   type Justify,
   type Align,
   type Position,
   type BorderStyle,
+  type Overflow,
   type Spacing,
   BORDER_CHARS,
 } from "./core/props.ts";
@@ -43,6 +46,9 @@ export {
   type ReactiveAppOptions,
   type RunOptions,
 } from "./core/app.ts";
+
+// Console capture
+export { ConsoleCapture, type ConsoleMessage } from "./core/console-capture.ts";
 
 // Input primitive
 export {

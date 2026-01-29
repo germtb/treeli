@@ -4,8 +4,10 @@
  */
 
 import { Renderer, type RendererOptions } from "./renderer.ts";
-import { createRoot, createEffect, batch, type Owner } from "./reactive.ts";
+import { createRoot, createEffect, createSignal, batch, type Owner } from "./reactive.ts";
 import type { VNode } from "./vnode.ts";
+import { ConsoleCapture } from "./console-capture.ts";
+import { createVNode } from "./vnode.ts";
 
 export interface ReactiveAppOptions extends RendererOptions {
   /** Called before each render */
@@ -135,13 +137,74 @@ export interface RunOptions extends Omit<ReactiveAppOptions, "width" | "height">
   onMount?: (app: ReactiveApp) => void;
   /** Called when app exits */
   onUnmount?: () => void;
+  /** Capture console output (default: true). Press Ctrl+L to toggle log viewer. */
+  captureConsole?: boolean;
+  /** Maximum number of console messages to keep in memory (default: 1000) */
+  maxConsoleMessages?: number;
 }
 
 export function run(App: () => VNode, options: RunOptions = {}): void {
   const width = options.width ?? process.stdout.columns ?? 80;
   const height = options.height ?? process.stdout.rows ?? 24;
+  const captureConsole = options.captureConsole ?? true;
+  const maxConsoleMessages = options.maxConsoleMessages ?? 1000;
 
-  const app = render(App, {
+  // Setup console capture if enabled
+  let consoleCapture: ConsoleCapture | null = null;
+  const [showLogs, setShowLogs] = createSignal(false);
+
+  if (captureConsole) {
+    consoleCapture = new ConsoleCapture(maxConsoleMessages);
+    consoleCapture.start();
+  }
+
+  // Wrap App to overlay logs when enabled
+  const WrappedApp = () => {
+    const appContent = App();
+    const logsVisible = showLogs();
+
+    if (!logsVisible || !consoleCapture) {
+      return appContent;
+    }
+
+    // Render logs as bottom panel - app content stays visible above
+    // getMessages() is reactive - triggers re-render when messages change
+    const messages = consoleCapture.getMessages();
+    const panelHeight = Math.max(6, Math.floor(height / 3)); // 1/3 of screen, min 6 rows
+    const panelY = height - panelHeight;
+    const maxLines = panelHeight - 4; // Account for border, padding, header
+    const visibleMessages = messages.slice(-maxLines);
+
+    return createVNode("box", { width, height }, [
+      appContent,
+      // Bottom panel for logs
+      createVNode(
+        "box",
+        {
+          position: "absolute" as const,
+          x: 0,
+          y: panelY,
+          width: width,
+          height: panelHeight,
+          border: "single" as const,
+          overflow: "hidden" as const,
+          style: { background: "black", color: "white" },
+        },
+        [
+          createVNode("text", { style: { bold: true, color: "cyan" } }, [
+            createVNode("__text__", { text: ` Console (${messages.length}) - Ctrl+L close, Ctrl+K clear` }, []),
+          ]),
+          ...visibleMessages.map((msg) =>
+            createVNode("text", { style: { color: msg.level === "error" ? "red" : msg.level === "warn" ? "yellow" : "white" }, wrap: true }, [
+              createVNode("__text__", { text: ` ${consoleCapture!.formatMessage(msg)}` }, []),
+            ])
+          ),
+        ]
+      ),
+    ]);
+  };
+
+  const app = render(WrappedApp, {
     ...options,
     width,
     height,
@@ -165,6 +228,9 @@ export function run(App: () => VNode, options: RunOptions = {}): void {
   };
 
   const exit = () => {
+    if (consoleCapture) {
+      consoleCapture.stop();
+    }
     app.dispose();
     cleanupTerminal();
     options.onUnmount?.();
@@ -180,6 +246,18 @@ export function run(App: () => VNode, options: RunOptions = {}): void {
     // Ctrl+C always exits
     if (key === "\x03") {
       exit();
+      return;
+    }
+
+    // Ctrl+L toggles log viewer (if console capture is enabled)
+    if (key === "\x0c" && consoleCapture) {
+      setShowLogs(!showLogs());
+      return;
+    }
+
+    // Ctrl+K clears console logs (if console capture is enabled and logs are visible)
+    if (key === "\x0b" && consoleCapture && showLogs()) {
+      consoleCapture.clear();
       return;
     }
 

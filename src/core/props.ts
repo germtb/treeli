@@ -3,12 +3,14 @@
  */
 
 import type { Style } from "./cell.ts";
+import type { Input } from "./input.ts";
 
 export type Direction = "row" | "column";
 export type Justify = "start" | "center" | "end" | "space-between" | "space-around";
 export type Align = "start" | "center" | "end" | "stretch";
 export type Position = "relative" | "absolute";
 export type BorderStyle = "none" | "single" | "double" | "rounded" | "bold";
+export type Overflow = "visible" | "hidden" | "scroll";
 
 export interface Spacing {
   top: number;
@@ -40,9 +42,40 @@ export interface LayoutProps {
   y?: number;
   zIndex?: number;
 
+  // Overflow behavior
+  overflow?: Overflow;
+
   // Appearance
   border?: BorderStyle | boolean;
   style?: Style;
+}
+
+/**
+ * Props for the <input> intrinsic element.
+ */
+export interface InputElementProps {
+  /** The input primitive (from createInput) */
+  input: Input;
+  /** Fixed width for the input field (defaults to content width) */
+  width?: number;
+  /** Fixed height for the input field (defaults to number of lines) */
+  height?: number;
+  /** Style for the text (default: white text) */
+  style?: Style;
+  /** Style for the cursor (default: inverted background) */
+  cursorStyle?: Style;
+  /** Style for placeholder text (default: dim) */
+  placeholderStyle?: Style;
+}
+
+/**
+ * Props for the <text> intrinsic element.
+ */
+export interface TextElementProps {
+  /** Text styling */
+  style?: Style;
+  /** When true, wrap text to fit available width */
+  wrap?: boolean;
 }
 
 /**

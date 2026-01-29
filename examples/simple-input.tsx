@@ -1,6 +1,9 @@
 /**
  * Minimal input demo for debugging
  * Run with: bun examples/simple-input.tsx
+ *
+ * Press Ctrl+L to view console logs
+ * Press Ctrl+K to clear logs (when log viewer is open)
  */
 
 import {
@@ -9,10 +12,10 @@ import {
   run,
   KEYS,
   createEffect,
+  createSignal,
 } from "../src/index.ts";
-import { jsx } from "../src/jsx/jsx-runtime.ts";
 
-const input = createInput();
+const input = createInput({ placeholder: "Type something..." });
 input.focus();
 
 let renderCount = 0;
@@ -22,51 +25,42 @@ function App() {
 
   const val = input.value();
   const cursor = input.cursorPos();
-  const display = input.displayValue();
 
-  const beforeCursor = display.slice(0, cursor);
-  const cursorChar = display[cursor] || "_";
-  const afterCursor = display.slice(cursor + 1);
+  // Show value with escaped newlines for clarity
+  const displayVal = val.replace(/\n/g, "\\n");
 
-  return jsx("box", {
-    direction: "column",
-    children: [
-      jsx("text", {
-        style: { color: "yellow" },
-        children: "Type something (Ctrl+C to quit):",
-      }),
-      jsx("box", {
-        direction: "row",
-        children: [
-          jsx("text", {
-            style: { color: "white" },
-            children: beforeCursor,
-          }),
-          jsx("text", {
-            style: { background: "white", color: "black" },
-            children: cursorChar,
-          }),
-          jsx("text", {
-            style: { color: "white" },
-            children: afterCursor,
-          }),
-        ],
-      }),
-      jsx("text", {
-        style: { color: "cyan" },
-        children: `Value: "${val}" | Cursor: ${cursor} | Renders: ${renderCount}`,
-      }),
-    ],
-  });
+  return (
+    <box direction="column" gap={1}>
+      <text style={{ color: "yellow" }}>
+        Type something (Shift+Enter for newlines):
+      </text>
+      <input input={input} />
+      <text style={{ color: "cyan" }}>
+        Value: "{displayVal}" | Cursor: {cursor} | Renders: {renderCount}
+      </text>
+      <text />
+      <text style={{ dim: true }}>
+        • Ctrl+L to view console logs
+      </text>
+      <text style={{ dim: true }}>
+        • Ctrl+C to quit
+      </text>
+    </box>
+  );
 }
 
 run(App, {
+  captureConsole: true, // Enable console capture (default: true)
   onKeypress(key) {
     const before = input.value();
     const handled = input.handleKey(key);
     const after = input.value();
 
-    // Debug: log to stderr so it doesn't mess up the TUI
-    console.error(`Key: ${JSON.stringify(key)} | Handled: ${handled} | Before: "${before}" | After: "${after}"`);
+    // Log to console - will be captured and viewable with Ctrl+L
+    if (handled) {
+      console.log(`Key handled: ${JSON.stringify(key)}, value changed from "${before}" to "${after}"`);
+    } else {
+      console.warn(`Key not handled: ${JSON.stringify(key)}`);
+    }
   },
 });

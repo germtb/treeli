@@ -40,6 +40,8 @@ export interface InputOptions {
   maxLength?: number;
   /** Mask character for passwords (e.g., "*") */
   mask?: string;
+  /** Placeholder text shown when input is empty */
+  placeholder?: string;
   /**
    * Custom keypress handler.
    * Return new InputState to consume the key, or null to let it bubble.
@@ -66,7 +68,8 @@ export interface Input extends Focusable {
   dispose: () => void; // Unregister from focus manager
 
   // For rendering
-  displayValue: () => string; // handles masking
+  displayValue: () => string; // handles masking and placeholder
+  showingPlaceholder: () => boolean; // true if displaying placeholder text
 
   // Get current state snapshot
   getState: () => InputState;
@@ -323,6 +326,7 @@ export function createInput(options: InputOptions = {}): Input {
     initialValue = "",
     maxLength,
     mask,
+    placeholder = "",
     onKeypress = defaultInputHandler,
   } = options;
 
@@ -383,11 +387,17 @@ export function createInput(options: InputOptions = {}): Input {
   };
 
   const displayValue = () => {
-    if (mask) {
-      return mask.repeat(value().length);
+    const val = value();
+    if (val.length === 0 && placeholder) {
+      return placeholder;
     }
-    return value();
+    if (mask) {
+      return mask.repeat(val.length);
+    }
+    return val;
   };
+
+  const showingPlaceholder = () => value().length === 0 && placeholder.length > 0;
 
   const input: Input = {
     // Signals
@@ -408,6 +418,7 @@ export function createInput(options: InputOptions = {}): Input {
 
     // Rendering helper
     displayValue,
+    showingPlaceholder,
 
     // State snapshot
     getState,
