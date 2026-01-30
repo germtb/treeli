@@ -1,6 +1,6 @@
 {
   "name": "treeli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A declarative TUI framework using JSX and efficient cell-based diffing",
   "type": "module",
   "main": "./dist/index.js",
