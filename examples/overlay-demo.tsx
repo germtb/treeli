@@ -5,13 +5,56 @@
 
 import {
   createSignal,
-  focus,
+  createFocusable,
   run,
   KEYS,
 } from "../src/index.ts";
 
 const [showModal, setShowModal] = createSignal(false);
 const [modalPosition, setModalPosition] = createSignal({ x: 10, y: 5 });
+
+// Create a focusable to handle app shortcuts
+const { focusable: appInput } = createFocusable({
+  onKey: (key) => {
+    // Toggle modal
+    if (key === "m" || key === "M") {
+      setShowModal(!showModal());
+      return true;
+    }
+
+    // Close modal with Escape
+    if (key === KEYS.ESCAPE && showModal()) {
+      setShowModal(false);
+      return true;
+    }
+
+    // Move modal with arrow keys
+    if (showModal()) {
+      const pos = modalPosition();
+      if (key === KEYS.UP) {
+        setModalPosition({ ...pos, y: Math.max(0, pos.y - 1) });
+        return true;
+      }
+      if (key === KEYS.DOWN) {
+        setModalPosition({ ...pos, y: pos.y + 1 });
+        return true;
+      }
+      if (key === KEYS.LEFT) {
+        setModalPosition({ ...pos, x: Math.max(0, pos.x - 1) });
+        return true;
+      }
+      if (key === KEYS.RIGHT) {
+        setModalPosition({ ...pos, x: pos.x + 1 });
+        return true;
+      }
+    }
+
+    return false;
+  },
+});
+
+// Focus the app input
+appInput.focus();
 
 function Modal() {
   const pos = modalPosition();
@@ -45,7 +88,7 @@ function App() {
       <box direction="column" padding={1}>
         <text style={{ color: "green", bold: true }}>Overlay Demo</text>
         <text>This is the main content behind the modal.</text>
-        <text>Press [M] to toggle modal, [Q] to quit.</text>
+        <text>Press [M] to toggle modal, [Ctrl+C] to quit.</text>
 
         <box margin={{ top: 2 }} direction="column">
           <text>Some background content here...</text>
@@ -62,44 +105,4 @@ function App() {
   );
 }
 
-run(App, {
-  onKeypress(key) {
-    // Toggle modal
-    if (key === "m" || key === "M") {
-      setShowModal(!showModal());
-      return;
-    }
-
-    // Close modal with Escape
-    if (key === KEYS.ESCAPE && showModal()) {
-      setShowModal(false);
-      return;
-    }
-
-    // Move modal with arrow keys
-    if (showModal()) {
-      const pos = modalPosition();
-      if (key === KEYS.UP) {
-        setModalPosition({ ...pos, y: Math.max(0, pos.y - 1) });
-        return;
-      }
-      if (key === KEYS.DOWN) {
-        setModalPosition({ ...pos, y: pos.y + 1 });
-        return;
-      }
-      if (key === KEYS.LEFT) {
-        setModalPosition({ ...pos, x: Math.max(0, pos.x - 1) });
-        return;
-      }
-      if (key === KEYS.RIGHT) {
-        setModalPosition({ ...pos, x: pos.x + 1 });
-        return;
-      }
-    }
-
-    // Quit
-    if (key === "q" || key === "Q") {
-      return true; // exit
-    }
-  },
-});
+run(App);

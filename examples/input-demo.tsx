@@ -145,13 +145,4 @@ function App() {
   );
 }
 
-run(App, {
-  onKeypress(key) {
-    // Focus manager handles Tab/Shift+Tab and routes to focused element
-    if (focus.handleKey(key)) {
-      return; // consumed
-    }
-
-    // Unhandled keys fall through here (e.g., global shortcuts)
-  },
-});
+run(App);

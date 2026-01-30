@@ -13,6 +13,8 @@ export {
   type LayoutProps,
   type InputElementProps,
   type TextElementProps,
+  type SelectElementProps,
+  type OptionElementProps,
   type Direction,
   type Justify,
   type Align,
@@ -50,10 +52,19 @@ export {
 // Console capture
 export { ConsoleCapture, type ConsoleMessage } from "./core/console-capture.ts";
 
+// Headless runner
+export { createHeadlessRunner, type HeadlessRunner, type HeadlessRunnerOptions } from "./core/headless-runner.ts";
+
+// Legacy alias for backwards compatibility
+export { createHeadlessRunner as createTestRunner } from "./core/headless-runner.ts";
+export type { HeadlessRunner as TestRunner, HeadlessRunnerOptions as TestRunnerOptions } from "./core/headless-runner.ts";
+
 // Input primitive
 export {
   createInput,
   defaultInputHandler,
+  inputHandlers,
+  composeHandlers,
   type InputOptions,
   type InputState,
   type Input,
@@ -67,8 +78,23 @@ export {
   type Button,
 } from "./core/button.ts";
 
+// Select primitive
+export {
+  createSelect,
+  type SelectOptions,
+  type Select,
+} from "./core/select.ts";
+
 // Focus management
-export { focus, KEYS, type Focusable } from "./core/focus.ts";
+export {
+  focus,
+  KEYS,
+  createFocusable,
+  createKeySequence,
+  type Focusable,
+  type FocusableOptions,
+  type KeySequenceOptions,
+} from "./core/focus.ts";
 
 // Clipboard
 export { copyToClipboard, copyToPrimary } from "./core/clipboard.ts";

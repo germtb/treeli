@@ -15,7 +15,19 @@ import {
   createSignal,
 } from "../src/index.ts";
 
-const input = createInput({ placeholder: "Type something..." });
+// Create an input that logs key presses
+const input = createInput({
+  placeholder: "Type something...",
+  onKeypress: (key, state) => {
+    const result = defaultInputHandler(key, state);
+    if (result !== null) {
+      console.log(`Key handled: ${JSON.stringify(key)}, value changed from "${state.value}" to "${result.value}"`);
+    } else {
+      console.warn(`Key not handled: ${JSON.stringify(key)}`);
+    }
+    return result;
+  },
+});
 input.focus();
 
 let renderCount = 0;
@@ -40,27 +52,15 @@ function App() {
       </text>
       <text />
       <text style={{ dim: true }}>
-        • Ctrl+L to view console logs
+        Ctrl+L to view console logs
       </text>
       <text style={{ dim: true }}>
-        • Ctrl+C to quit
+        Ctrl+C to quit
       </text>
     </box>
   );
 }
 
 run(App, {
-  captureConsole: true, // Enable console capture (default: true)
-  onKeypress(key) {
-    const before = input.value();
-    const handled = input.handleKey(key);
-    const after = input.value();
-
-    // Log to console - will be captured and viewable with Ctrl+L
-    if (handled) {
-      console.log(`Key handled: ${JSON.stringify(key)}, value changed from "${before}" to "${after}"`);
-    } else {
-      console.warn(`Key not handled: ${JSON.stringify(key)}`);
-    }
-  },
+  captureConsole: true,
 });

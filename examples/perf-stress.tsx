@@ -5,7 +5,7 @@
  * Run with: bun examples/perf-stress.tsx
  */
 
-import { createSignal, run, KEYS } from "../src/index.ts";
+import { createSignal, createFocusable, run, KEYS } from "../src/index.ts";
 
 // Configuration
 const ROWS = 100;        // Total rows of content
@@ -73,61 +73,6 @@ function autoScroll() {
     const newOffset = offset + 1;
     return newOffset > ROWS - VISIBLE_ROWS ? 0 : newOffset;
   });
-}
-
-function App() {
-  const offset = scrollOffset();
-  const rows = data();
-  const visibleRows = rows.slice(offset, offset + VISIBLE_ROWS);
-  const currentFps = fps();
-  const currentRenderTime = renderTime();
-  const isPaused = paused();
-  const target = targetFps();
-  const noise = noisePercent();
-
-  return (
-    <box direction="column">
-      {/* Header with stats */}
-      <box direction="row" style={{ color: "cyan", bold: true }}>
-        <text>
-          FPS: {currentFps.toFixed(0)}/{target === 0 ? "∞" : target} | Render: {currentRenderTime.toFixed(2)}ms |
-          Noise: {noise}% | {isPaused ? "PAUSED" : "RUNNING"}
-        </text>
-      </box>
-
-      {/* Controls */}
-      <text style={{ color: "white", dim: true }}>
-        p=pause  +/-=fps  &lt;/&gt;=noise  [/]=scroll  q=quit
-      </text>
-
-      {/* Separator */}
-      <text style={{ color: "white" }}>{"─".repeat(COLS)}</text>
-
-      {/* Content viewport */}
-      {visibleRows.map((row, i) => {
-        const globalRow = offset + i;
-        const isEven = globalRow % 2 === 0;
-        return (
-          <text
-            style={{
-              color: isEven ? "green" : "yellow",
-              background: globalRow === offset + Math.floor(VISIBLE_ROWS / 2) ? "blue" : undefined
-            }}
-          >
-            {row}
-          </text>
-        );
-      })}
-
-      {/* Separator */}
-      <text style={{ color: "white" }}>{"─".repeat(COLS)}</text>
-
-      {/* Footer */}
-      <text style={{ color: "white", dim: true }}>
-        Rows: {ROWS} | Visible: {VISIBLE_ROWS} | Scroll: {offset}/{ROWS - VISIBLE_ROWS} | Frame: {frameCount()}
-      </text>
-    </box>
-  );
 }
 
 // Main loop
@@ -205,53 +150,109 @@ function cycleFps(direction: 1 | -1) {
   startAnimation(); // Restart with new FPS
 }
 
-run(App, {
-  onKeypress: (key, app) => {
+// Create a focusable to handle app shortcuts
+const { focusable: appInput } = createFocusable({
+  onKey: (key) => {
     switch (key) {
-      case "q":
-      case KEYS.CTRL_C:
-        stopAnimation();
-        app.dispose();
-        return true; // Signal to exit
       case "p":
         setPaused((p) => !p);
-        break;
+        return true;
       case KEYS.UP:
         setScrollOffset((o) => Math.max(0, o - 1));
-        break;
+        return true;
       case KEYS.DOWN:
         setScrollOffset((o) => Math.min(ROWS - VISIBLE_ROWS, o + 1));
-        break;
+        return true;
       case "[":
         // Page up (10 rows)
         setScrollOffset((o) => Math.max(0, o - 10));
-        break;
+        return true;
       case "]":
         // Page down (10 rows)
         setScrollOffset((o) => Math.min(ROWS - VISIBLE_ROWS, o + 10));
-        break;
+        return true;
       case "+":
       case "=":
         // Increase target FPS
         cycleFps(1);
-        break;
+        return true;
       case "-":
       case "_":
         // Decrease target FPS
         cycleFps(-1);
-        break;
+        return true;
       case ">":
       case ".":
         // Increase noise
         setNoisePercent((n) => Math.min(100, n + 5));
-        break;
+        return true;
       case "<":
       case ",":
         // Decrease noise
         setNoisePercent((n) => Math.max(0, n - 5));
-        break;
+        return true;
     }
+    return false;
   },
 });
 
+// Focus the app input
+appInput.focus();
+
+function App() {
+  const offset = scrollOffset();
+  const rows = data();
+  const visibleRows = rows.slice(offset, offset + VISIBLE_ROWS);
+  const currentFps = fps();
+  const currentRenderTime = renderTime();
+  const isPaused = paused();
+  const target = targetFps();
+  const noise = noisePercent();
+
+  return (
+    <box direction="column">
+      {/* Header with stats */}
+      <box direction="row" style={{ color: "cyan", bold: true }}>
+        <text>
+          FPS: {currentFps.toFixed(0)}/{target === 0 ? "∞" : target} | Render: {currentRenderTime.toFixed(2)}ms |
+          Noise: {noise}% | {isPaused ? "PAUSED" : "RUNNING"}
+        </text>
+      </box>
+
+      {/* Controls */}
+      <text style={{ color: "white", dim: true }}>
+        p=pause  +/-=fps  &lt;/&gt;=noise  [/]=scroll  Ctrl+C=quit
+      </text>
+
+      {/* Separator */}
+      <text style={{ color: "white" }}>{"─".repeat(COLS)}</text>
+
+      {/* Content viewport */}
+      {visibleRows.map((row, i) => {
+        const globalRow = offset + i;
+        const isEven = globalRow % 2 === 0;
+        return (
+          <text
+            style={{
+              color: isEven ? "green" : "yellow",
+              background: globalRow === offset + Math.floor(VISIBLE_ROWS / 2) ? "blue" : undefined
+            }}
+          >
+            {row}
+          </text>
+        );
+      })}
+
+      {/* Separator */}
+      <text style={{ color: "white" }}>{"─".repeat(COLS)}</text>
+
+      {/* Footer */}
+      <text style={{ color: "white", dim: true }}>
+        Rows: {ROWS} | Visible: {VISIBLE_ROWS} | Scroll: {offset}/{ROWS - VISIBLE_ROWS} | Frame: {frameCount()}
+      </text>
+    </box>
+  );
+}
+
+run(App);
 startAnimation();

@@ -33,6 +33,7 @@ src/
     reactive.ts  # Signals, effects, memos
     input.ts     # Text input primitive
     button.ts    # Button primitive
+    select.ts    # Select/dropdown primitive
     focus.ts     # Focus management
     props.ts     # Layout prop types
   jsx/
@@ -55,7 +56,105 @@ examples/        # Demo applications
 
 - `<text>` - Text content with optional style
 - `<box>` - Container with flexbox-like layout
+- `<input>` - Text input field (requires `input` primitive)
+- `<select>` - Selection list (requires `select` primitive)
+- `<option>` - Option within a select
 - `<>...</>` - Fragment (vertical stacking)
+
+## Focusable Primitives
+
+Create primitives with `createInput()`, `createButton()`, `createSelect()`, or `createFocusable()`:
+
+```tsx
+const input = createInput({ placeholder: "Type here" });
+const btn = createButton({ onPress: () => console.log("Pressed!") });
+const sel = createSelect({ initialValue: "a" });
+
+// Focus management - the focus manager routes ALL stdin to focusables
+input.focus();  // Focus this element
+focus.next();   // Tab to next focusable
+focus.prev();   // Shift+Tab to previous
+
+// Use in JSX
+<input input={input} />
+<select select={sel}>
+  <option value="a">Option A</option>
+  <option value="b">Option B</option>
+</select>
+```
+
+### Key Handling Architecture
+
+All keyboard input flows through the focus system:
+
+```
+stdin → focus.handleKey() → focused element → unhandled key handler
+```
+
+- **No `onKeypress` in `run()`** - all keys go through focus manager
+- **Tab/Shift+Tab** handled automatically for focus navigation
+- **Focusables consume keys** by returning `true` from `handleKey`
+- **Unhandled keys** can be caught with `focus.setUnhandledKeyHandler()`
+
+### Custom Focusables with `createFocusable()`
+
+For apps that need global key handling without a visible input:
+
+```tsx
+const { focusable: appInput } = createFocusable({
+  onKey: (key) => {
+    if (key === "+") { increment(); return true; }
+    if (key === "-") { decrement(); return true; }
+    return false; // not consumed
+  },
+});
+appInput.focus();
+
+run(App); // No onKeypress needed - focus manager handles everything
+```
+
+### Select Props
+
+Navigation directly changes the selection (no separate "focused" vs "selected" state).
+
+```tsx
+<select
+  select={sel}                           // Required: the select primitive
+  pointer={<text color="cyan">❯ </text>} // Custom pointer element
+  pointerWidth={2}                       // Pointer column width
+  optionStyle={{ color: "white" }}       // Base style for all options
+  selectedStyle={{ bold: true }}         // Merged when option is selected
+>
+  <option value="a">Option A</option>
+  <option value="b" style={{ color: "red" }}>Red Option</option>
+</select>
+```
+
+Select API:
+- `sel.value()` - Current selected value
+- `sel.selectedIndex()` - Index of current selection
+- `sel.next()` / `sel.prev()` - Navigate (and select)
+- `sel.setValue(v)` / `sel.setIndex(i)` - Set selection
+- `sel.isSelected(v)` / `sel.isSelectedIndex(i)` - Check selection
+
+### FZF-like Pattern
+
+For filtered selects where input and navigation work together:
+
+```tsx
+const input = createInput({
+  onKeypress: (key, state) => {
+    // Arrow keys control the select navigation
+    if (key === KEYS.UP) { sel.prev(); return state; }
+    if (key === KEYS.DOWN) { sel.next(); return state; }
+    return defaultInputHandler(key, state);
+  },
+});
+
+const sel = createSelect({
+  focusable: false,  // Not in Tab order, controlled by input
+});
+```
 
 ## Layout Props
 

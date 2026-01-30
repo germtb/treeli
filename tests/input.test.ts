@@ -184,18 +184,6 @@ describe("createInput", () => {
       expect(input.value()).toBe("");
       expect(input.cursorPos()).toBe(0);
     });
-
-    it("Ctrl+K kills to end of line", () => {
-      const input = createInput({ initialValue: "hello world" });
-      input.focus();
-      // Move to middle
-      input.handleKey(KEYS.HOME);
-      for (let i = 0; i < 5; i++) input.handleKey(KEYS.RIGHT);
-
-      input.handleKey(KEYS.CTRL_K);
-      expect(input.value()).toBe("hello");
-      expect(input.cursorPos()).toBe(5);
-    });
   });
 
   describe("cursor movement", () => {
@@ -549,13 +537,6 @@ describe("multiline navigation", () => {
     expect(result?.value).toBe("hello\nld");
     expect(result?.cursorPos).toBe(6);
   });
-
-  it("Ctrl+K deletes to end of current line", () => {
-    const state: InputState = { value: "hello\nworld", cursorPos: 8 };
-    const result = defaultInputHandler(KEYS.CTRL_K, state);
-    expect(result?.value).toBe("hello\nwo");
-    expect(result?.cursorPos).toBe(8);
-  });
 });
 
 describe("Shift+Enter for newline", () => {
@@ -571,5 +552,140 @@ describe("Shift+Enter for newline", () => {
     const result = defaultInputHandler(KEYS.SHIFT_ENTER, state);
     expect(result?.value).toBe("hello\nworld");
     expect(result?.cursorPos).toBe(6);
+  });
+});
+
+// ============================================================================
+// Composable Input Handlers
+// ============================================================================
+
+import { inputHandlers, composeHandlers } from "../src/core/input.ts";
+
+describe("inputHandlers", () => {
+  describe("printable", () => {
+    it("inserts printable characters", () => {
+      const state: InputState = { value: "hello", cursorPos: 5 };
+      const result = inputHandlers.printable("!", state);
+      expect(result).toEqual({ value: "hello!", cursorPos: 6 });
+    });
+
+    it("returns null for non-printable", () => {
+      const state: InputState = { value: "hello", cursorPos: 5 };
+      const result = inputHandlers.printable(KEYS.ENTER, state);
+      expect(result).toBe(null);
+    });
+  });
+
+  describe("navigation", () => {
+    it("handles left arrow", () => {
+      const state: InputState = { value: "hello", cursorPos: 3 };
+      const result = inputHandlers.navigation(KEYS.LEFT, state);
+      expect(result?.cursorPos).toBe(2);
+    });
+
+    it("handles right arrow", () => {
+      const state: InputState = { value: "hello", cursorPos: 3 };
+      const result = inputHandlers.navigation(KEYS.RIGHT, state);
+      expect(result?.cursorPos).toBe(4);
+    });
+
+    it("returns null for non-navigation keys", () => {
+      const state: InputState = { value: "hello", cursorPos: 3 };
+      const result = inputHandlers.navigation("x", state);
+      expect(result).toBe(null);
+    });
+  });
+
+  describe("deletion", () => {
+    it("handles backspace", () => {
+      const state: InputState = { value: "hello", cursorPos: 5 };
+      const result = inputHandlers.deletion(KEYS.BACKSPACE, state);
+      expect(result).toEqual({ value: "hell", cursorPos: 4 });
+    });
+
+    it("handles delete", () => {
+      const state: InputState = { value: "hello", cursorPos: 0 };
+      const result = inputHandlers.deletion(KEYS.DELETE, state);
+      expect(result).toEqual({ value: "ello", cursorPos: 0 });
+    });
+
+    it("returns null for non-deletion keys", () => {
+      const state: InputState = { value: "hello", cursorPos: 3 };
+      const result = inputHandlers.deletion("x", state);
+      expect(result).toBe(null);
+    });
+  });
+
+  describe("newline", () => {
+    it("Enter creates newline", () => {
+      const state: InputState = { value: "hello", cursorPos: 5 };
+      const result = inputHandlers.newline(KEYS.ENTER, state);
+      expect(result).toEqual({ value: "hello\n", cursorPos: 6 });
+    });
+
+    it("returns null for non-Enter keys", () => {
+      const state: InputState = { value: "hello", cursorPos: 5 };
+      const result = inputHandlers.newline("x", state);
+      expect(result).toBe(null);
+    });
+  });
+
+  describe("shiftEnterNewline", () => {
+    it("Shift+Enter creates newline", () => {
+      const state: InputState = { value: "hello", cursorPos: 5 };
+      const result = inputHandlers.shiftEnterNewline(KEYS.SHIFT_ENTER, state);
+      expect(result).toEqual({ value: "hello\n", cursorPos: 6 });
+    });
+
+    it("Enter does not create newline", () => {
+      const state: InputState = { value: "hello", cursorPos: 5 };
+      const result = inputHandlers.shiftEnterNewline(KEYS.ENTER, state);
+      expect(result).toBe(null);
+    });
+  });
+});
+
+describe("composeHandlers", () => {
+  it("tries handlers in order", () => {
+    const handler = composeHandlers(
+      inputHandlers.navigation,
+      inputHandlers.deletion,
+      inputHandlers.printable,
+    );
+
+    const state: InputState = { value: "hello", cursorPos: 3 };
+
+    // Navigation should be handled first
+    expect(handler(KEYS.LEFT, state)?.cursorPos).toBe(2);
+
+    // Deletion should be handled
+    expect(handler(KEYS.BACKSPACE, state)?.value).toBe("helo");
+
+    // Printable should be handled
+    expect(handler("x", state)?.value).toBe("helxlo");
+  });
+
+  it("returns null if no handler matches", () => {
+    const handler = composeHandlers(
+      inputHandlers.navigation,
+    );
+
+    const state: InputState = { value: "hello", cursorPos: 3 };
+    expect(handler("x", state)).toBe(null);
+  });
+
+  it("can compose newline for multiline editors", () => {
+    const handler = composeHandlers(
+      inputHandlers.newline,
+      inputHandlers.printable,
+    );
+
+    const state: InputState = { value: "hello", cursorPos: 5 };
+
+    // Enter should create newline
+    expect(handler(KEYS.ENTER, state)?.value).toBe("hello\n");
+
+    // Regular chars should still work
+    expect(handler("!", state)?.value).toBe("hello!");
   });
 });

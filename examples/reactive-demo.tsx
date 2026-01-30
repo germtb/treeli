@@ -3,7 +3,7 @@
  * Run with: bun examples/reactive-demo.tsx
  */
 
-import { createSignal, createMemo, run } from "../src/index.ts";
+import { createSignal, createMemo, createFocusable, run } from "../src/index.ts";
 
 // Counter factory - creates independent counters
 function createCounter(initial = 0) {
@@ -27,6 +27,42 @@ const total = createMemo(() => counter1.count() + counter2.count());
 
 // Get active counter
 const getActiveCounter = () => (activeIdx() === 0 ? counter1 : counter2);
+
+// Create a focusable to handle app shortcuts
+const { focusable: appInput } = createFocusable({
+  onKey: (key) => {
+    if (key === "\t") {
+      // Tab
+      setActiveIdx((i) => (i === 0 ? 1 : 0));
+      return true;
+    }
+
+    if (key === "+" || key === "=") {
+      getActiveCounter().increment();
+      return true;
+    }
+
+    if (key === "-" || key === "_") {
+      getActiveCounter().decrement();
+      return true;
+    }
+
+    if (key === "r") {
+      getActiveCounter().reset();
+      return true;
+    }
+
+    if (key === "h") {
+      setShowHelp((s) => !s);
+      return true;
+    }
+
+    return false;
+  },
+});
+
+// Focus the app input
+appInput.focus();
 
 // App component
 function App() {
@@ -79,7 +115,7 @@ function App() {
       {/* Controls */}
       <box margin={{ top: 1 }}>
         <text style={{ color: "yellow" }}>
-          [Tab] Switch  [+/-] Change  [r] Reset  [h] Help  [q] Quit
+          [Tab] Switch  [+/-] Change  [r] Reset  [h] Help  [Ctrl+C] Quit
         </text>
       </box>
 
@@ -100,39 +136,4 @@ function App() {
 }
 
 // Run the app
-run(App, {
-  onKeypress(key) {
-    // Debug: uncomment to see key codes
-    // console.log("Key:", JSON.stringify(key), "charCode:", key.charCodeAt(0));
-
-    if (key === "q") {
-      return true; // Exit
-    }
-
-    if (key === "\t") {
-      // Tab
-      setActiveIdx((i) => (i === 0 ? 1 : 0));
-      return;
-    }
-
-    if (key === "+" || key === "=") {
-      getActiveCounter().increment();
-      return;
-    }
-
-    if (key === "-" || key === "_") {
-      getActiveCounter().decrement();
-      return;
-    }
-
-    if (key === "r") {
-      getActiveCounter().reset();
-      return;
-    }
-
-    if (key === "h") {
-      setShowHelp((s) => !s);
-      return;
-    }
-  },
-});
+run(App);

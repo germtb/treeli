@@ -3,15 +3,33 @@
  * Shows how the framework now handles cursor, placeholder styling, and focus automatically.
  */
 
-import { run, createInput, createSignal, KEYS } from "../src/index.ts";
+import { run, createInput, createSignal, defaultInputHandler, KEYS } from "../src/index.ts";
 
 // Create two inputs with placeholders
 const username = createInput({
   placeholder: "Enter your username...",
+  onKeypress: (key, state) => {
+    if (key === KEYS.ENTER) {
+      // Submit on Enter
+      setMessage(`Submitted:\n  Username: ${state.value}\n  Email: ${email.value()}`);
+      setTimeout(() => setMessage(""), 2000);
+      return state; // consume key
+    }
+    return defaultInputHandler(key, state);
+  },
 });
 
 const email = createInput({
   placeholder: "your.email@example.com",
+  onKeypress: (key, state) => {
+    if (key === KEYS.ENTER) {
+      // Submit on Enter
+      setMessage(`Submitted:\n  Username: ${username.value()}\n  Email: ${state.value}`);
+      setTimeout(() => setMessage(""), 2000);
+      return state; // consume key
+    }
+    return defaultInputHandler(key, state);
+  },
 });
 
 // Message state
@@ -40,16 +58,16 @@ function App() {
 
       <text />
       <text style={{ dim: true }}>
-        • Tab to switch fields
+        Tab to switch fields
       </text>
       <text style={{ dim: true }}>
-        • Enter to submit
+        Enter to submit
       </text>
       <text style={{ dim: true }}>
-        • Shift+Enter for multiline (try it!)
+        Shift+Enter for multiline (try it!)
       </text>
       <text style={{ dim: true }}>
-        • Ctrl+C to quit
+        Ctrl+C to quit
       </text>
 
       {msg && (
@@ -62,28 +80,5 @@ function App() {
   );
 }
 
-run(App, {
-  onKeypress(key) {
-    // Handle Tab to switch focus
-    if (key === KEYS.TAB) {
-      if (username.focused()) {
-        email.focus();
-      } else {
-        username.focus();
-      }
-      return;
-    }
-
-    // Handle Enter to submit
-    if (key === KEYS.ENTER) {
-      setMessage(`Submitted:\n  Username: ${username.value()}\n  Email: ${email.value()}`);
-      // Clear message after 2 seconds
-      setTimeout(() => setMessage(""), 2000);
-      return;
-    }
-
-    // Let focused input handle the key
-    if (username.handleKey(key)) return;
-    if (email.handleKey(key)) return;
-  },
-});
+// Focus manager handles everything automatically!
+run(App);

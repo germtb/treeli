@@ -11,7 +11,7 @@ import {
   type Props,
 } from "../core/vnode.ts";
 import type { Style } from "../core/cell.ts";
-import type { LayoutProps, InputElementProps } from "../core/props.ts";
+import type { LayoutProps, InputElementProps, SelectElementProps, OptionElementProps } from "../core/props.ts";
 
 export type { VNode };
 
@@ -64,6 +64,8 @@ export namespace JSX {
     box: BoxProps;
     text: TextProps;
     input: InputElementProps;
+    select: SelectElementProps & { children?: unknown };
+    option: OptionElementProps & { children?: unknown };
     fragment: { children?: unknown };
   }
 

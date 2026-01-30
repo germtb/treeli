@@ -1,27 +1,33 @@
 /**
  * Demo: Multiline text input with focus management
+ *
+ * Shows how to use composable input handlers to create a multiline
+ * editor where Enter creates newlines (instead of Shift+Enter).
+ *
  * Run with: bun examples/multiline-demo.tsx
  */
 
 import {
   createSignal,
   createInput,
-  defaultInputHandler,
+  inputHandlers,
+  composeHandlers,
   focus,
   run,
   KEYS,
 } from "../src/index.ts";
 
-// Create a multiline input
+// Create a multiline input using composable handlers
+// Note: We use inputHandlers.newline instead of shiftEnterNewline
+// so that Enter creates a newline (like a text editor)
 const textInput = createInput({
-  initialValue: "Type here...\nUse Shift+Enter for newlines",
-  onKeypress: (key, state) => {
-    // Debug: log what key codes we receive
-    if (key.length > 1 || key < " ") {
-      console.log("Key:", JSON.stringify(key), "Hex:", Buffer.from(key).toString("hex"));
-    }
-    return defaultInputHandler(key, state);
-  },
+  initialValue: "Type here...\nPress Enter for newlines",
+  onKeypress: composeHandlers(
+    inputHandlers.navigation,
+    inputHandlers.deletion,
+    inputHandlers.newline,    // Enter creates newline!
+    inputHandlers.printable,
+  ),
 });
 
 textInput.focus();
@@ -126,7 +132,7 @@ function App() {
 
       <box margin={{ top: 1 }}>
         <text style={{ color: { rgb: [128, 128, 128] } }}>
-          [Shift+Enter] New line  [Arrow] Navigate  [Alt+Arrow] Word jump  [Ctrl+C] Quit
+          [Enter] New line  [Arrow] Navigate  [Alt+Arrow] Word jump  [Ctrl+C] Quit
         </text>
       </box>
 
@@ -139,10 +145,5 @@ function App() {
   );
 }
 
-run(App, {
-  onKeypress(key) {
-    if (focus.handleKey(key)) {
-      return; // consumed
-    }
-  },
-});
+// Focus manager handles everything automatically!
+run(App);

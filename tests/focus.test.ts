@@ -139,3 +139,155 @@ describe("Focus Manager", () => {
     expect(focus.current()).toBe(null);
   });
 });
+
+// ============================================================================
+// createKeySequence
+// ============================================================================
+
+import { createKeySequence } from "../src/core/focus.ts";
+
+describe("createKeySequence", () => {
+  it("handles single-key sequences", () => {
+    let called = "";
+    const handler = createKeySequence({
+      sequences: {
+        "g": () => { called = "g"; },
+      },
+    });
+
+    expect(handler("g")).toBe(true);
+    expect(called).toBe("g");
+  });
+
+  it("handles two-key sequences", () => {
+    let called = "";
+    const handler = createKeySequence({
+      sequences: {
+        "gg": () => { called = "gg"; },
+        "dd": () => { called = "dd"; },
+      },
+    });
+
+    // First 'g' is buffered
+    expect(handler("g")).toBe(true);
+    expect(called).toBe("");
+
+    // Second 'g' triggers the sequence
+    expect(handler("g")).toBe(true);
+    expect(called).toBe("gg");
+  });
+
+  it("handles different sequences", () => {
+    let called = "";
+    const handler = createKeySequence({
+      sequences: {
+        "gg": () => { called = "gg"; },
+        "dd": () => { called = "dd"; },
+        "yy": () => { called = "yy"; },
+      },
+    });
+
+    handler("d");
+    handler("d");
+    expect(called).toBe("dd");
+
+    called = "";
+    handler("y");
+    handler("y");
+    expect(called).toBe("yy");
+  });
+
+  it("resets buffer on invalid sequence", () => {
+    let called = "";
+    const handler = createKeySequence({
+      sequences: {
+        "gg": () => { called = "gg"; },
+      },
+      onUnmatched: (key) => {
+        called = `unmatched:${key}`;
+        return true;
+      },
+    });
+
+    // 'g' is buffered
+    handler("g");
+    expect(called).toBe("");
+
+    // 'x' is not a valid continuation, so buffer resets and onUnmatched is called
+    handler("x");
+    expect(called).toBe("unmatched:x");
+
+    // Now 'gg' should work again
+    called = "";
+    handler("g");
+    handler("g");
+    expect(called).toBe("gg");
+  });
+
+  it("calls onUnmatched for non-prefix keys", () => {
+    let called = "";
+    const handler = createKeySequence({
+      sequences: {
+        "gg": () => { called = "gg"; },
+      },
+      onUnmatched: (key) => {
+        called = `single:${key}`;
+        return true;
+      },
+    });
+
+    // 'j' is not a prefix for any sequence
+    handler("j");
+    expect(called).toBe("single:j");
+  });
+
+  it("returns false if no handler matches", () => {
+    const handler = createKeySequence({
+      sequences: {
+        "gg": () => {},
+      },
+    });
+
+    // 'x' is not a sequence or prefix, and no onUnmatched
+    expect(handler("x")).toBe(false);
+  });
+
+  it("handles mixed length sequences", () => {
+    let called = "";
+    const handler = createKeySequence({
+      sequences: {
+        "d": () => { called = "d"; },
+        "dd": () => { called = "dd"; },
+        "daw": () => { called = "daw"; },
+      },
+    });
+
+    // 'd' alone should trigger 'd' sequence since it's a complete sequence
+    handler("d");
+    expect(called).toBe("d");
+
+    // But 'dd' should also work
+    called = "";
+    handler("d");
+    expect(called).toBe("d"); // 'd' triggers immediately
+  });
+
+  it("prefers longer sequences when buffering", () => {
+    let called = "";
+    const handler = createKeySequence({
+      sequences: {
+        "gg": () => { called = "gg"; },
+        "gx": () => { called = "gx"; },
+      },
+    });
+
+    // 'g' should buffer because it's a prefix for multiple sequences
+    expect(handler("g")).toBe(true);
+    expect(called).toBe("");
+
+    // 'g' again completes 'gg'
+    expect(handler("g")).toBe(true);
+    expect(called).toBe("gg");
+  });
+});
+

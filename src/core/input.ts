@@ -75,177 +75,9 @@ export interface Input extends Focusable {
   getState: () => InputState;
 }
 
-/**
- * Default input handler implementing standard text editing behavior.
- * Can be used standalone or composed with custom handlers.
- *
- * Supports:
- * - Basic navigation: Left, Right, Home, End
- * - Word navigation: Alt+Left, Alt+Right
- * - Multiline navigation: Up, Down (when text contains newlines)
- * - Deletion: Backspace, Delete, Ctrl+W (word), Ctrl+U (line), Ctrl+K (to end)
- * - Newline: Shift+Enter inserts newline
- *
- * @example
- * ```ts
- * const input = createInput({
- *   onKeypress: (key, state) =>
- *     myCustomHandler(key, state) ?? defaultInputHandler(key, state),
- * });
- * ```
- */
-export function defaultInputHandler(key: string, state: InputState): InputState | null {
-  const { value, cursorPos } = state;
-
-  switch (key) {
-    case KEYS.BACKSPACE:
-    case KEYS.BACKSPACE_CTRL_H: {
-      if (cursorPos === 0) return state; // consume but no change
-      return {
-        value: value.slice(0, cursorPos - 1) + value.slice(cursorPos),
-        cursorPos: cursorPos - 1,
-      };
-    }
-
-    case KEYS.DELETE: {
-      if (cursorPos >= value.length) return state;
-      return {
-        value: value.slice(0, cursorPos) + value.slice(cursorPos + 1),
-        cursorPos,
-      };
-    }
-
-    case KEYS.LEFT:
-      return { value, cursorPos: Math.max(0, cursorPos - 1) };
-
-    case KEYS.RIGHT:
-      return { value, cursorPos: Math.min(value.length, cursorPos + 1) };
-
-    // Word navigation (Alt+Arrow)
-    case KEYS.ALT_LEFT:
-    case KEYS.ALT_LEFT_CSI: {
-      // Move to start of previous word
-      let newPos = cursorPos;
-      // Skip whitespace/punctuation before cursor
-      while (newPos > 0 && !isWordChar(value[newPos - 1]!)) newPos--;
-      // Skip word characters
-      while (newPos > 0 && isWordChar(value[newPos - 1]!)) newPos--;
-      return { value, cursorPos: newPos };
-    }
-
-    case KEYS.ALT_RIGHT:
-    case KEYS.ALT_RIGHT_CSI: {
-      // Move to end of next word
-      let newPos = cursorPos;
-      // Skip whitespace/punctuation after cursor
-      while (newPos < value.length && !isWordChar(value[newPos]!)) newPos++;
-      // Skip word characters
-      while (newPos < value.length && isWordChar(value[newPos]!)) newPos++;
-      return { value, cursorPos: newPos };
-    }
-
-    // Multiline navigation (Up/Down)
-    case KEYS.UP: {
-      const lineInfo = getLineInfo(value, cursorPos);
-      if (lineInfo.lineIndex === 0) return state; // Already on first line
-      // Move to same column on previous line (or end if shorter)
-      const prevLineStart = lineInfo.lineStarts[lineInfo.lineIndex - 1]!;
-      const prevLineEnd = lineInfo.lineStarts[lineInfo.lineIndex]! - 1; // before \n
-      const prevLineLength = prevLineEnd - prevLineStart;
-      const newPos = prevLineStart + Math.min(lineInfo.column, prevLineLength);
-      return { value, cursorPos: newPos };
-    }
-
-    case KEYS.DOWN: {
-      const lineInfo = getLineInfo(value, cursorPos);
-      if (lineInfo.lineIndex >= lineInfo.lineStarts.length - 1) return state; // Already on last line
-      // Move to same column on next line (or end if shorter)
-      const nextLineStart = lineInfo.lineStarts[lineInfo.lineIndex + 1]!;
-      const nextLineEnd = lineInfo.lineIndex + 2 < lineInfo.lineStarts.length
-        ? lineInfo.lineStarts[lineInfo.lineIndex + 2]! - 1
-        : value.length;
-      const nextLineLength = nextLineEnd - nextLineStart;
-      const newPos = nextLineStart + Math.min(lineInfo.column, nextLineLength);
-      return { value, cursorPos: newPos };
-    }
-
-    case KEYS.HOME:
-    case KEYS.HOME_ALT:
-    case KEYS.CTRL_A: {
-      // Move to start of current line (or start of text if single line)
-      const lineInfo = getLineInfo(value, cursorPos);
-      return { value, cursorPos: lineInfo.lineStarts[lineInfo.lineIndex]! };
-    }
-
-    case KEYS.END:
-    case KEYS.END_ALT:
-    case KEYS.CTRL_E: {
-      // Move to end of current line (or end of text if single line)
-      const lineInfo = getLineInfo(value, cursorPos);
-      const lineEnd = lineInfo.lineIndex + 1 < lineInfo.lineStarts.length
-        ? lineInfo.lineStarts[lineInfo.lineIndex + 1]! - 1 // before \n
-        : value.length;
-      return { value, cursorPos: lineEnd };
-    }
-
-    case KEYS.CTRL_U:
-      // Delete from cursor to start of line
-      const lineInfoU = getLineInfo(value, cursorPos);
-      const lineStart = lineInfoU.lineStarts[lineInfoU.lineIndex]!;
-      return {
-        value: value.slice(0, lineStart) + value.slice(cursorPos),
-        cursorPos: lineStart,
-      };
-
-    case KEYS.CTRL_K:
-      // Delete from cursor to end of line
-      const lineInfoK = getLineInfo(value, cursorPos);
-      const lineEnd = lineInfoK.lineIndex + 1 < lineInfoK.lineStarts.length
-        ? lineInfoK.lineStarts[lineInfoK.lineIndex + 1]! - 1
-        : value.length;
-      return {
-        value: value.slice(0, cursorPos) + value.slice(lineEnd),
-        cursorPos,
-      };
-
-    case KEYS.CTRL_W:
-    case KEYS.ALT_BACKSPACE: {
-      // Delete previous word
-      if (cursorPos === 0) return state;
-      let newPos = cursorPos;
-      // Skip whitespace/punctuation
-      while (newPos > 0 && !isWordChar(value[newPos - 1]!)) newPos--;
-      // Skip word characters
-      while (newPos > 0 && isWordChar(value[newPos - 1]!)) newPos--;
-      return {
-        value: value.slice(0, newPos) + value.slice(cursorPos),
-        cursorPos: newPos,
-      };
-    }
-
-    // Shift+Enter inserts newline
-    // Different terminals send different sequences:
-    // - Ghostty/some terminals: \n (LF)
-    // - Kitty (CSI u protocol): \x1b[13;2u
-    case KEYS.SHIFT_ENTER:
-    case KEYS.ENTER_LF:
-      return {
-        value: value.slice(0, cursorPos) + "\n" + value.slice(cursorPos),
-        cursorPos: cursorPos + 1,
-      };
-
-    default:
-      // Printable ASCII characters (single char or pasted text)
-      if (key.length >= 1 && isPrintableText(key)) {
-        return {
-          value: value.slice(0, cursorPos) + key + value.slice(cursorPos),
-          cursorPos: cursorPos + key.length,
-        };
-      }
-      // Unknown key - don't consume
-      return null;
-  }
-}
+// ============================================================================
+// Composable Input Handlers
+// ============================================================================
 
 /**
  * Check if a string contains only printable ASCII characters.
@@ -297,6 +129,270 @@ function getLineInfo(value: string, cursorPos: number): {
 }
 
 /**
+ * Handler for printable characters (insert text at cursor).
+ */
+function handlePrintable(key: string, state: InputState): InputState | null {
+  const { value, cursorPos } = state;
+  if (key.length >= 1 && isPrintableText(key)) {
+    return {
+      value: value.slice(0, cursorPos) + key + value.slice(cursorPos),
+      cursorPos: cursorPos + key.length,
+    };
+  }
+  return null;
+}
+
+/**
+ * Handler for navigation keys (arrows, home/end, word navigation).
+ */
+function handleNavigation(key: string, state: InputState): InputState | null {
+  const { value, cursorPos } = state;
+
+  switch (key) {
+    case KEYS.LEFT:
+      return { value, cursorPos: Math.max(0, cursorPos - 1) };
+
+    case KEYS.RIGHT:
+      return { value, cursorPos: Math.min(value.length, cursorPos + 1) };
+
+    // Word navigation (Alt+Arrow)
+    case KEYS.ALT_LEFT:
+    case KEYS.ALT_LEFT_CSI: {
+      // Move to start of previous word
+      let newPos = cursorPos;
+      while (newPos > 0 && !isWordChar(value[newPos - 1]!)) newPos--;
+      while (newPos > 0 && isWordChar(value[newPos - 1]!)) newPos--;
+      return { value, cursorPos: newPos };
+    }
+
+    case KEYS.ALT_RIGHT:
+    case KEYS.ALT_RIGHT_CSI: {
+      // Move to end of next word
+      let newPos = cursorPos;
+      while (newPos < value.length && !isWordChar(value[newPos]!)) newPos++;
+      while (newPos < value.length && isWordChar(value[newPos]!)) newPos++;
+      return { value, cursorPos: newPos };
+    }
+
+    // Multiline navigation (Up/Down)
+    case KEYS.UP: {
+      const lineInfo = getLineInfo(value, cursorPos);
+      if (lineInfo.lineIndex === 0) return state; // Already on first line
+      const prevLineStart = lineInfo.lineStarts[lineInfo.lineIndex - 1]!;
+      const prevLineEnd = lineInfo.lineStarts[lineInfo.lineIndex]! - 1;
+      const prevLineLength = prevLineEnd - prevLineStart;
+      const newPos = prevLineStart + Math.min(lineInfo.column, prevLineLength);
+      return { value, cursorPos: newPos };
+    }
+
+    case KEYS.DOWN: {
+      const lineInfo = getLineInfo(value, cursorPos);
+      if (lineInfo.lineIndex >= lineInfo.lineStarts.length - 1) return state;
+      const nextLineStart = lineInfo.lineStarts[lineInfo.lineIndex + 1]!;
+      const nextLineEnd = lineInfo.lineIndex + 2 < lineInfo.lineStarts.length
+        ? lineInfo.lineStarts[lineInfo.lineIndex + 2]! - 1
+        : value.length;
+      const nextLineLength = nextLineEnd - nextLineStart;
+      const newPos = nextLineStart + Math.min(lineInfo.column, nextLineLength);
+      return { value, cursorPos: newPos };
+    }
+
+    case KEYS.HOME:
+    case KEYS.HOME_ALT:
+    case KEYS.CTRL_A: {
+      const lineInfo = getLineInfo(value, cursorPos);
+      return { value, cursorPos: lineInfo.lineStarts[lineInfo.lineIndex]! };
+    }
+
+    case KEYS.END:
+    case KEYS.END_ALT:
+    case KEYS.CTRL_E: {
+      const lineInfo = getLineInfo(value, cursorPos);
+      const lineEnd = lineInfo.lineIndex + 1 < lineInfo.lineStarts.length
+        ? lineInfo.lineStarts[lineInfo.lineIndex + 1]! - 1
+        : value.length;
+      return { value, cursorPos: lineEnd };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Handler for deletion keys (backspace, delete, word delete).
+ */
+function handleDeletion(key: string, state: InputState): InputState | null {
+  const { value, cursorPos } = state;
+
+  switch (key) {
+    case KEYS.BACKSPACE:
+    case KEYS.BACKSPACE_CTRL_H: {
+      if (cursorPos === 0) return state; // consume but no change
+      return {
+        value: value.slice(0, cursorPos - 1) + value.slice(cursorPos),
+        cursorPos: cursorPos - 1,
+      };
+    }
+
+    case KEYS.DELETE: {
+      if (cursorPos >= value.length) return state;
+      return {
+        value: value.slice(0, cursorPos) + value.slice(cursorPos + 1),
+        cursorPos,
+      };
+    }
+
+    case KEYS.CTRL_U: {
+      // Delete from cursor to start of line
+      const lineInfo = getLineInfo(value, cursorPos);
+      const lineStart = lineInfo.lineStarts[lineInfo.lineIndex]!;
+      return {
+        value: value.slice(0, lineStart) + value.slice(cursorPos),
+        cursorPos: lineStart,
+      };
+    }
+
+    case KEYS.CTRL_W:
+    case KEYS.ALT_BACKSPACE: {
+      // Delete previous word
+      if (cursorPos === 0) return state;
+      let newPos = cursorPos;
+      while (newPos > 0 && !isWordChar(value[newPos - 1]!)) newPos--;
+      while (newPos > 0 && isWordChar(value[newPos - 1]!)) newPos--;
+      return {
+        value: value.slice(0, newPos) + value.slice(cursorPos),
+        cursorPos: newPos,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Handler for newline insertion (Enter creates newline).
+ * Use this for multiline editors. Not included in defaultInputHandler.
+ */
+function handleNewline(key: string, state: InputState): InputState | null {
+  const { value, cursorPos } = state;
+
+  if (key === KEYS.ENTER || key === KEYS.ENTER_LF || key === KEYS.SHIFT_ENTER) {
+    return {
+      value: value.slice(0, cursorPos) + "\n" + value.slice(cursorPos),
+      cursorPos: cursorPos + 1,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Handler for shift+enter newline only (for inputs where Enter submits).
+ * This is what defaultInputHandler uses.
+ */
+function handleShiftEnterNewline(key: string, state: InputState): InputState | null {
+  const { value, cursorPos } = state;
+
+  // Shift+Enter and \n (LF) both insert newline
+  if (key === KEYS.SHIFT_ENTER || key === KEYS.ENTER_LF) {
+    return {
+      value: value.slice(0, cursorPos) + "\n" + value.slice(cursorPos),
+      cursorPos: cursorPos + 1,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Composable input handlers.
+ * Use these with composeHandlers() to build custom input behavior.
+ *
+ * @example
+ * ```ts
+ * // Multiline editor with Enter creating newlines
+ * const editor = createInput({
+ *   onKeypress: composeHandlers(
+ *     inputHandlers.navigation,
+ *     inputHandlers.deletion,
+ *     inputHandlers.newline,  // Enter creates newline!
+ *     inputHandlers.printable,
+ *   ),
+ * });
+ * ```
+ */
+export const inputHandlers = {
+  /** Insert printable characters at cursor */
+  printable: handlePrintable,
+  /** Arrow keys, home/end, word navigation (Alt+arrows), multiline (Up/Down) */
+  navigation: handleNavigation,
+  /** Backspace, Delete, Ctrl+W (word), Ctrl+U (to start of line) */
+  deletion: handleDeletion,
+  /** Enter creates newline (for multiline editors) */
+  newline: handleNewline,
+  /** Shift+Enter creates newline (for inputs where Enter submits) */
+  shiftEnterNewline: handleShiftEnterNewline,
+};
+
+/**
+ * Compose multiple input handlers into one.
+ * Handlers are tried in order until one returns non-null.
+ *
+ * @example
+ * ```ts
+ * const myHandler = composeHandlers(
+ *   inputHandlers.navigation,
+ *   inputHandlers.deletion,
+ *   inputHandlers.newline,
+ *   inputHandlers.printable,
+ * );
+ * ```
+ */
+export function composeHandlers(
+  ...handlers: KeypressHandler[]
+): KeypressHandler {
+  return (key: string, state: InputState): InputState | null => {
+    for (const handler of handlers) {
+      const result = handler(key, state);
+      if (result !== null) {
+        return result;
+      }
+    }
+    return null;
+  };
+}
+
+/**
+ * Default input handler implementing standard text editing behavior.
+ * Can be used standalone or composed with custom handlers.
+ *
+ * Supports:
+ * - Basic navigation: Left, Right, Home, End
+ * - Word navigation: Alt+Left, Alt+Right
+ * - Multiline navigation: Up, Down (when text contains newlines)
+ * - Deletion: Backspace, Delete, Ctrl+W (word), Ctrl+U (to start of line)
+ * - Newline: Shift+Enter inserts newline (Enter is typically for submit)
+ *
+ * @example
+ * ```ts
+ * const input = createInput({
+ *   onKeypress: (key, state) =>
+ *     myCustomHandler(key, state) ?? defaultInputHandler(key, state),
+ * });
+ * ```
+ */
+export const defaultInputHandler: KeypressHandler = composeHandlers(
+  inputHandlers.navigation,
+  inputHandlers.deletion,
+  inputHandlers.shiftEnterNewline,
+  inputHandlers.printable,
+);
+
+// ============================================================================
+// Input Primitive
+// ============================================================================
+
+/**
  * Create an input primitive with reactive state.
  *
  * @example
@@ -314,11 +410,15 @@ function getLineInfo(value: string, cursorPos: number): {
  *   },
  * });
  *
- * // In your keypress handler:
- * onKeypress(key) {
- *   if (input.handleKey(key)) return; // consumed
- *   // handle other keys...
- * }
+ * // Multiline editor with Enter creating newlines
+ * const editor = createInput({
+ *   onKeypress: composeHandlers(
+ *     inputHandlers.navigation,
+ *     inputHandlers.deletion,
+ *     inputHandlers.newline,
+ *     inputHandlers.printable,
+ *   ),
+ * });
  * ```
  */
 export function createInput(options: InputOptions = {}): Input {
@@ -335,8 +435,12 @@ export function createInput(options: InputOptions = {}): Input {
   const [focused, setFocused] = createSignal(false);
 
   const clampCursor = (pos: number, len: number) => Math.max(0, Math.min(pos, len));
-
   const applyMaxLength = (val: string) => (maxLength ? val.slice(0, maxLength) : val);
+
+  const getState = (): InputState => ({
+    value: value(),
+    cursorPos: cursorPos(),
+  });
 
   const setState = (newState: InputState) => {
     const limitedValue = applyMaxLength(newState.value);
@@ -347,22 +451,14 @@ export function createInput(options: InputOptions = {}): Input {
     });
   };
 
-  const getState = (): InputState => ({
-    value: value(),
-    cursorPos: cursorPos(),
-  });
-
   const handleKey = (key: string): boolean => {
     if (!focused()) return false;
 
     const currentState = getState();
     const newState = onKeypress(key, currentState);
-
     if (newState === null) {
       return false; // didn't consume
     }
-
-    // Apply the new state
     setState(newState);
     return true; // consumed
   };
@@ -416,7 +512,7 @@ export function createInput(options: InputOptions = {}): Input {
     // Lifecycle
     dispose: () => unregisterFocusable(input),
 
-    // Rendering helper
+    // Rendering helpers
     displayValue,
     showingPlaceholder,
 

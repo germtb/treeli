@@ -5,6 +5,7 @@
 
 import {
   createSignal,
+  createFocusable,
   run,
   KEYS,
   type Color,
@@ -174,6 +175,45 @@ function toggleExpand(node: FileNode): void {
   setTree(updateNode(tree()));
 }
 
+// Create a focusable to handle navigation
+const { focusable: treeInput } = createFocusable({
+  onKey: (key) => {
+    const items = getVisibleItems();
+    const current = selectedIndex();
+
+    if (key === "j" || key === KEYS.DOWN) {
+      setSelectedIndex(Math.min(current + 1, items.length - 1));
+      setMessage("");
+      return true;
+    } else if (key === "k" || key === KEYS.UP) {
+      setSelectedIndex(Math.max(current - 1, 0));
+      setMessage("");
+      return true;
+    } else if (key === KEYS.ENTER || key === "l") {
+      const node = items[current];
+      if (node) toggleExpand(node);
+      return true;
+    } else if (key === "h") {
+      // Collapse current or go to parent
+      const node = items[current];
+      if (node?.isDirectory && node.expanded) {
+        toggleExpand(node);
+      }
+      return true;
+    } else if (key === "g") {
+      setSelectedIndex(0);
+      return true;
+    } else if (key === "G") {
+      setSelectedIndex(items.length - 1);
+      return true;
+    }
+    return false;
+  },
+});
+
+// Focus the tree input
+treeInput.focus();
+
 // Render a single file entry
 function FileEntry(props: { node: FileNode; selected: boolean }) {
   const { node, selected } = props;
@@ -225,7 +265,7 @@ function App() {
 
       <box margin={{ top: 1 }}>
         <text style={{ color: { rgb: [100, 100, 100] } }}>
-          [j/k] Navigate  [Enter] Expand/Select  [q] Quit
+          [j/k] Navigate  [Enter] Expand/Select  [Ctrl+C] Quit
         </text>
       </box>
 
@@ -238,30 +278,4 @@ function App() {
   );
 }
 
-run(App, {
-  onKeypress(key) {
-    const items = getVisibleItems();
-    const current = selectedIndex();
-
-    if (key === "j" || key === KEYS.DOWN) {
-      setSelectedIndex(Math.min(current + 1, items.length - 1));
-      setMessage("");
-    } else if (key === "k" || key === KEYS.UP) {
-      setSelectedIndex(Math.max(current - 1, 0));
-      setMessage("");
-    } else if (key === KEYS.ENTER || key === "l") {
-      const node = items[current];
-      if (node) toggleExpand(node);
-    } else if (key === "h") {
-      // Collapse current or go to parent
-      const node = items[current];
-      if (node?.isDirectory && node.expanded) {
-        toggleExpand(node);
-      }
-    } else if (key === "g") {
-      setSelectedIndex(0);
-    } else if (key === "G") {
-      setSelectedIndex(items.length - 1);
-    }
-  },
-});
+run(App);

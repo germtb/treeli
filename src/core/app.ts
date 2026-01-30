@@ -8,6 +8,7 @@ import { createRoot, createEffect, createSignal, batch, type Owner } from "./rea
 import type { VNode } from "./vnode.ts";
 import { ConsoleCapture } from "./console-capture.ts";
 import { createVNode } from "./vnode.ts";
+import { focus, KEYS } from "./focus.ts";
 
 export interface ReactiveAppOptions extends RendererOptions {
   /** Called before each render */
@@ -131,8 +132,6 @@ export interface RunOptions extends Omit<ReactiveAppOptions, "width" | "height">
   width?: number;
   /** Terminal height (defaults to stdout.rows or 24) */
   height?: number;
-  /** Handle keypress. Return true to exit. */
-  onKeypress?: (key: string, app: ReactiveApp) => boolean | void;
   /** Called when app starts */
   onMount?: (app: ReactiveApp) => void;
   /** Called when app exits */
@@ -227,7 +226,11 @@ export function run(App: () => VNode, options: RunOptions = {}): void {
     }
   };
 
+  // Cleanup function for unhandled key handler (set below)
+  let cleanupUnhandledHandler: (() => void) | null = null;
+
   const exit = () => {
+    cleanupUnhandledHandler?.();
     if (consoleCapture) {
       consoleCapture.stop();
     }
@@ -239,35 +242,34 @@ export function run(App: () => VNode, options: RunOptions = {}): void {
 
   setupTerminal();
 
+  // Setup console shortcuts as unhandled key handler
+  // Ctrl+K clears logs only if no focusable consumes it (selects use it for navigation)
+  if (consoleCapture) {
+    cleanupUnhandledHandler = focus.setUnhandledKeyHandler((key) => {
+      if (key === KEYS.CTRL_L) {
+        setShowLogs(!showLogs());
+        return true;
+      }
+      if (key === KEYS.CTRL_K && showLogs()) {
+        consoleCapture!.clear();
+        return true;
+      }
+      return false;
+    });
+  }
+
   // Handle keyboard
   process.stdin.on("data", (data) => {
     const key = data.toString();
 
     // Ctrl+C always exits
-    if (key === "\x03") {
+    if (key === KEYS.CTRL_C) {
       exit();
       return;
     }
 
-    // Ctrl+L toggles log viewer (if console capture is enabled)
-    if (key === "\x0c" && consoleCapture) {
-      setShowLogs(!showLogs());
-      return;
-    }
-
-    // Ctrl+K clears console logs (if console capture is enabled and logs are visible)
-    if (key === "\x0b" && consoleCapture && showLogs()) {
-      consoleCapture.clear();
-      return;
-    }
-
-    if (options.onKeypress) {
-      const shouldExit = options.onKeypress(key, app);
-      if (shouldExit) {
-        exit();
-        return;
-      }
-    }
+    // Route to focus manager
+    focus.handleKey(key);
   });
 
   // Handle resize

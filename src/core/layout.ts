@@ -25,6 +25,7 @@ import {
   type Overflow,
 } from "./props.ts";
 import type { Input } from "./input.ts";
+import type { Select } from "./select.ts";
 
 /**
  * Clip region for overflow handling.
@@ -144,6 +145,24 @@ function measureNode(node: VNode): { width: number; height: number } {
     // Add 1 to width to always have room for cursor at end of line
     const width = explicitWidth ?? (maxLineWidth + 1);
     const height = explicitHeight ?? lines.length;
+
+    return { width, height };
+  }
+
+  // <select> element: size based on options and pointer
+  if (node.type === "select") {
+    const pointerWidth = (node.props.pointerWidth as number) ?? 2;
+    const optionChildren = node.children.filter((c) => c.type === "option");
+
+    // Measure each option
+    let maxOptionWidth = 0;
+    for (const opt of optionChildren) {
+      const optText = collectTextContent(opt);
+      maxOptionWidth = Math.max(maxOptionWidth, optText.length);
+    }
+
+    const width = pointerWidth + maxOptionWidth;
+    const height = optionChildren.length;
 
     return { width, height };
   }
@@ -294,6 +313,47 @@ function layoutNode(node: VNode, ctx: LayoutContext): LayoutResult {
         innerHeight: height,
         node,
         children: [],
+        zIndex: (node.props.zIndex as number) ?? 0,
+      },
+      absoluteBoxes: [],
+    };
+  }
+
+  // Handle <select> element - creates layout for options with pointer
+  if (node.type === "select") {
+    const select = node.props.select as Select<unknown>;
+    const pointerWidth = (node.props.pointerWidth as number) ?? 2;
+    const optionChildren = node.children.filter((c) => c.type === "option");
+
+    // Register options with the select primitive
+    select._clearOptions();
+    optionChildren.forEach((opt, index) => {
+      select._registerOption(index, opt.props.value);
+    });
+    select._setOptionCount(optionChildren.length);
+
+    // Measure total size
+    let maxOptionWidth = 0;
+    for (const opt of optionChildren) {
+      const optText = collectTextContent(opt);
+      maxOptionWidth = Math.max(maxOptionWidth, optText.length);
+    }
+
+    const totalWidth = pointerWidth + maxOptionWidth;
+    const totalHeight = optionChildren.length;
+
+    return {
+      box: {
+        x: ctx.x,
+        y: ctx.y,
+        width: totalWidth,
+        height: totalHeight,
+        innerX: ctx.x,
+        innerY: ctx.y,
+        innerWidth: totalWidth,
+        innerHeight: totalHeight,
+        node,
+        children: [], // Options are rendered directly, not as child boxes
         zIndex: (node.props.zIndex as number) ?? 0,
       },
       absoluteBoxes: [],
@@ -704,6 +764,53 @@ export function renderToBuffer(box: LayoutBox, buffer: CellBuffer, clip: ClipReg
     return;
   }
 
+  // Handle <select> elements with options and pointer
+  if (node.type === "select") {
+    const select = node.props.select as Select<unknown>;
+    const pointer = node.props.pointer as VNode | undefined;
+    const pointerWidth = (node.props.pointerWidth as number) ?? 2;
+    const baseOptionStyle = (node.props.optionStyle as Style) ?? {};
+    const selectedStyle = (node.props.selectedStyle as Style) ?? {};
+
+    const optionChildren = node.children.filter((c) => c.type === "option");
+
+    // Render each option
+    optionChildren.forEach((opt, index) => {
+      const optY = y + index;
+      if (clip && (optY < clip.minY || optY >= clip.maxY)) return;
+
+      const isSelected = select.isSelectedIndex(index);
+
+      // Merge styles
+      const computedStyle: Style = {
+        ...baseOptionStyle,
+        ...((opt.props.style as Style) ?? {}),
+        ...(isSelected ? selectedStyle : {}),
+      };
+
+      // Render pointer column
+      const pointerText = isSelected && pointer ? collectTextContent(pointer) : " ".repeat(pointerWidth);
+      const pointerStyle = isSelected && pointer && pointer.props.style ? (pointer.props.style as Style) : {};
+      for (let i = 0; i < pointerWidth && i < pointerText.length; i++) {
+        const charX = x + i;
+        if (isInClip(charX, optY, clip)) {
+          buffer.setCharMerge(charX, optY, pointerText[i] || " ", pointerStyle);
+        }
+      }
+
+      // Render option content
+      const optText = collectTextContent(opt);
+      for (let i = 0; i < optText.length; i++) {
+        const charX = x + pointerWidth + i;
+        if (isInClip(charX, optY, clip)) {
+          buffer.setCharMerge(charX, optY, optText[i]!, computedStyle);
+        }
+      }
+    });
+
+    return;
+  }
+
   // Handle box elements
   if (node.type === "box") {
     const style = (node.props.style as Style) ?? {};
@@ -874,6 +981,53 @@ export function renderToLogicalBuffer(box: LayoutBox, buffer: LogicalBuffer, cli
         }
       }
     }
+    return;
+  }
+
+  // Handle <select> elements with options and pointer
+  if (node.type === "select") {
+    const select = node.props.select as Select<unknown>;
+    const pointer = node.props.pointer as VNode | undefined;
+    const pointerWidth = (node.props.pointerWidth as number) ?? 2;
+    const baseOptionStyle = (node.props.optionStyle as Style) ?? {};
+    const selectedStyle = (node.props.selectedStyle as Style) ?? {};
+
+    const optionChildren = node.children.filter((c) => c.type === "option");
+
+    // Render each option
+    optionChildren.forEach((opt, index) => {
+      const optY = y + index;
+      if (clip && (optY < clip.minY || optY >= clip.maxY)) return;
+
+      const isSelected = select.isSelectedIndex(index);
+
+      // Merge styles
+      const computedStyle: Style = {
+        ...baseOptionStyle,
+        ...((opt.props.style as Style) ?? {}),
+        ...(isSelected ? selectedStyle : {}),
+      };
+
+      // Render pointer column
+      const pointerText = isSelected && pointer ? collectTextContent(pointer) : " ".repeat(pointerWidth);
+      const pointerStyle = isSelected && pointer && pointer.props.style ? (pointer.props.style as Style) : {};
+      for (let i = 0; i < pointerWidth && i < pointerText.length; i++) {
+        const charX = x + i;
+        if (isInClip(charX, optY, clip)) {
+          buffer.setMerge(charX, optY, { char: pointerText[i] || " ", style: pointerStyle });
+        }
+      }
+
+      // Render option content
+      const optText = collectTextContent(opt);
+      for (let i = 0; i < optText.length; i++) {
+        const charX = x + pointerWidth + i;
+        if (isInClip(charX, optY, clip)) {
+          buffer.setMerge(charX, optY, { char: optText[i]!, style: computedStyle });
+        }
+      }
+    });
+
     return;
   }
 

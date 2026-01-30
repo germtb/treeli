@@ -4,6 +4,8 @@
 
 import type { Style } from "./cell.ts";
 import type { Input } from "./input.ts";
+import type { Select } from "./select.ts";
+import type { VNode } from "./vnode.ts";
 
 export type Direction = "row" | "column";
 export type Justify = "start" | "center" | "end" | "space-between" | "space-around";
@@ -76,6 +78,32 @@ export interface TextElementProps {
   style?: Style;
   /** When true, wrap text to fit available width */
   wrap?: boolean;
+}
+
+/**
+ * Props for the <select> intrinsic element.
+ */
+export interface SelectElementProps {
+  /** The select primitive (from createSelect) */
+  select: Select<any>;
+  /** Pointer element shown next to the selected option */
+  pointer?: VNode;
+  /** Width of the pointer column (default: auto-detect or 2) */
+  pointerWidth?: number;
+  /** Base style applied to all options */
+  optionStyle?: Style;
+  /** Style merged when option is selected */
+  selectedStyle?: Style;
+}
+
+/**
+ * Props for the <option> intrinsic element (child of <select>).
+ */
+export interface OptionElementProps {
+  /** The value this option represents */
+  value: unknown;
+  /** Style for this specific option (overrides select's optionStyle) */
+  style?: Style;
 }
 
 /**

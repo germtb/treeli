@@ -3,7 +3,7 @@
  * Captures console output to memory and provides a way to view it in the TUI.
  */
 
-import { createSignal, type Accessor } from "./reactive.ts";
+import { createSignal } from "./reactive.ts";
 
 export interface ConsoleMessage {
   timestamp: Date;
@@ -12,7 +12,7 @@ export interface ConsoleMessage {
 }
 
 export class ConsoleCapture {
-  private _messages: [Accessor<ConsoleMessage[]>, (v: ConsoleMessage[] | ((prev: ConsoleMessage[]) => ConsoleMessage[])) => void];
+  private _messages;
   private maxMessages: number;
   private originalConsole: {
     log: typeof console.log;
